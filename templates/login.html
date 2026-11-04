@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Ingresar{% endblock %}
 {% block body %}
+<button class="btn btn-ghost icon-btn theme-toggle login-theme" type="button" data-theme-toggle aria-label="Cambiar a modo oscuro">
+  <span class="when-light">{{ icon('moon') }}</span><span class="when-dark">{{ icon('sun') }}</span></button>
 <div class="login-wrap">
   <section class="login-hero" aria-label="Presentación">
     <span class="brand"><span class="brand-mark" aria-hidden="true">P</span><span class="brand-name">Portal de Proveedores<small>{{ company }}</small></span></span>

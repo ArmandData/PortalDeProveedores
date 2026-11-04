@@ -6,8 +6,9 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}Portal de Proveedores{% endblock %} · {{ company }}</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232952cc'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=1">
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=1" defer></script>
+  <script src="{{ url_for('static', filename='js/theme-init.js') }}?v=2"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=2">
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=2" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -49,6 +50,8 @@
           <span class="who"><strong>{{ g.user.full_name }}</strong><span>{{ nav_team.name if nav_team else 'Administrador' }}</span></span>
         </div>
       {% endif %}
+      <button class="btn btn-ghost btn-sm theme-toggle" type="button" data-theme-toggle aria-label="Cambiar a modo oscuro">
+          <span class="when-light">{{ icon('moon', 'icon-sm') }}Modo oscuro</span><span class="when-dark">{{ icon('sun', 'icon-sm') }}Modo claro</span></button>
       <form method="post" action="{{ url_for('logout') }}" class="logout-form">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button class="btn btn-ghost btn-sm btn-block" type="submit">{{ icon('logout', 'icon-sm') }}Cerrar sesión</button>
@@ -60,6 +63,8 @@
     <header class="topbar">
       <button class="btn btn-ghost icon-btn" type="button" id="nav-toggle" aria-controls="sidebar" aria-expanded="false" aria-label="Abrir menú">{{ icon('menu') }}</button>
       <a class="brand" href="{{ url_for('home') }}"><span class="brand-mark" aria-hidden="true">P</span><span class="brand-name">Portal de Proveedores</span></a>
+      <button class="btn btn-ghost icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Cambiar a modo oscuro">
+        <span class="when-light">{{ icon('moon') }}</span><span class="when-dark">{{ icon('sun') }}</span></button>
     </header>
     <main id="main" tabindex="-1">{% block main %}{% endblock %}</main>
   </div>
