@@ -1,4 +1,4 @@
-/* Asistente del portal: conversación, adjuntos, selección de contrato y panel del caso. */
+/* MiProveedor, asistente del portal: conversación, adjuntos, selección de contrato y panel del caso. */
 (() => {
   "use strict";
   const app = document.getElementById("chat-app");
@@ -111,7 +111,7 @@
     } else {
       el.className = "msg msg-bot";
       el.innerHTML = `<span class="avatar avatar-bot" aria-hidden="true">${icon("sparkles", "icon-sm")}</span>
-        <div class="msg-body"><div class="msg-meta"><strong>Asistente</strong><time>· ${esc(m.time || "")}</time></div>${body}${files}</div>`;
+        <div class="msg-body"><div class="msg-meta"><strong>MiProveedor</strong><time>· ${esc(m.time || "")}</time></div>${body}${files}</div>`;
     }
     return el;
   }
@@ -131,8 +131,8 @@
     el.className = "msg msg-bot";
     el.id = "typing";
     el.innerHTML = `<span class="avatar avatar-bot" aria-hidden="true">${icon("sparkles", "icon-sm")}</span>
-      <div class="msg-body"><div class="msg-meta"><strong>Asistente</strong> · analizando tu mensaje…</div>
-      <div class="bubble"><span class="typing" aria-label="El asistente está escribiendo"><i></i><i></i><i></i></span></div></div>`;
+      <div class="msg-body"><div class="msg-meta"><strong>MiProveedor</strong> · analizando tu mensaje…</div>
+      <div class="bubble"><span class="typing" aria-label="MiProveedor está escribiendo"><i></i><i></i><i></i></span></div></div>`;
     return el;
   }
 
@@ -309,10 +309,10 @@
     } else {
       els.casePane.innerHTML = `<section class="case-empty"><div class="icon-wrap">${icon("ticket")}</div>
         <h2 style="margin-bottom:6px">Sin ticket todavía</h2>
-        <p>Si tu consulta necesita la intervención de un equipo, el asistente va a crear un ticket con su número de seguimiento y lo vas a ver acá.</p></section>
+        <p>Si tu consulta necesita la intervención de un equipo, MiProveedor va a crear un ticket con su número de seguimiento y lo vas a ver acá.</p></section>
         ${contractBlock(c)}`;
       els.caseStrip.hidden = true;
-      els.meta.innerHTML = state.contract === undefined ? `<span>Asistente del portal</span>` : "";
+      els.meta.innerHTML = state.contract === undefined ? `<span>MiProveedor · asistente virtual</span>` : "";
     }
   }
 

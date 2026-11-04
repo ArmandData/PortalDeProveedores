@@ -48,7 +48,7 @@
             <dt>Condición de pago</dt><dd>{{ p.condicion_pago or '—' }}</dd>
             <dt>Proveedor desde</dt><dd>{{ p.created_at | fecha(False) }}</dd>
           </dl>
-          <div class="lock-note">{{ icon('shield', 'icon-sm') }}<span>¿Necesitás actualizar datos fiscales o bancarios? <a href="{{ url_for('assistant') }}">Pedilo en el asistente</a> y adjuntá la constancia correspondiente. Nunca te vamos a pedir estos datos por e-mail.</span></div>
+          <div class="lock-note">{{ icon('shield', 'icon-sm') }}<span>¿Necesitás actualizar datos fiscales o bancarios? <a href="{{ url_for('assistant') }}">Pedilo a MiProveedor</a> y adjuntá la constancia correspondiente. Nunca te vamos a pedir estos datos por e-mail.</span></div>
         </div>
       </section>
 

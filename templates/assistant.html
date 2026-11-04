@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, contract_badge %}
-{% block title %}Asistente{% endblock %}
+{% block title %}MiProveedor{% endblock %}
 {% block main %}
 <div class="chat-layout" id="chat-app"
      data-conversation="{{ active.id if active else '' }}"
@@ -45,7 +45,7 @@
   </aside>
 
   <!-- Chat -->
-  <section class="chat-pane" id="chat-pane" aria-label="Chat con el asistente">
+  <section class="chat-pane" id="chat-pane" aria-label="Chat con MiProveedor">
     <header class="chat-head">
       <button class="btn btn-ghost icon-btn back-btn" type="button" id="back-to-list" aria-label="Ver conversaciones">{{ icon('back') }}</button>
       <span class="avatar avatar-bot" aria-hidden="true">{{ icon('sparkles', 'icon-sm') }}</span>
@@ -53,7 +53,7 @@
         <h1 id="chat-title">{{ active.title if active else 'Nueva consulta' }}</h1>
         <div class="meta">
           <span id="contract-pin-slot"></span>
-          <span id="chat-meta" class="meta"><span>Asistente del portal{% if not ai_enabled() %} · modo básico{% endif %}</span></span>
+          <span id="chat-meta" class="meta"><span>MiProveedor · asistente virtual{% if not ai_enabled() %} · modo básico{% endif %}</span></span>
         </div>
       </div>
     </header>

@@ -1,4 +1,4 @@
-"""Asistente IA: responde al proveedor en lenguaje natural, clasifica y deriva.
+"""MiProveedor, asistente IA: responde al proveedor en lenguaje natural, clasifica y deriva.
 
 Usa Claude (API de Anthropic) con salida estructurada en JSON. Si no hay credenciales
 configuradas, cae en un clasificador por palabras clave para que el portal siga operativo.
@@ -59,7 +59,7 @@ def _system_prompt(teams, case_types=()):
     # Los plazos de cada tipo son internos: no se le pasan a la IA para que no pueda informarlos.
     type_lines = "\n".join(f"- `{c['id']}` — {c['name']} ({c['kind']}, equipo `{slug_by_id.get(c['team_id'], 'general')}`): {c['description']}"
                            for c in case_types) or "- (sin tipos configurados)"
-    return f"""Sos el asistente virtual del Portal de Proveedores de {COMPANY}, una operadora de petróleo y gas (upstream) con operaciones en yacimientos convencionales y no convencionales. Este portal es el canal único de contacto entre los contratistas y proveedores de bienes y servicios petroleros y la empresa. Respondés en español rioplatense neutro y profesional (tratá de "vos"), cálido y conciso.
+    return f"""Sos MiProveedor, el asistente virtual de Mesa de Proveedores, el portal de proveedores de {COMPANY}, una operadora de petróleo y gas (upstream) con operaciones en yacimientos convencionales y no convencionales. Este portal es el canal único de contacto entre los contratistas y proveedores de bienes y servicios petroleros y la empresa. Respondés en español rioplatense neutro y profesional (tratá de "vos"), cálido y conciso. Si te preguntan quién sos, decí que sos MiProveedor, el asistente virtual del portal (una inteligencia artificial, no una persona del equipo).
 
 Tu trabajo en cada mensaje:
 1. Entender qué necesita el proveedor (consulta o reclamo) usando el mensaje, el historial y los archivos adjuntos.
@@ -153,7 +153,7 @@ def _context_block(provider, history, ticket, contract, documents=None, blocks=(
         lines.append("<ticket_abierto>ninguno</ticket_abierto>")
     lines.append("<historial>")
     for m in history[-30:]:
-        who = {"provider": "Proveedor", "assistant": "Asistente", "agent": "Equipo interno", "system": "Sistema"}[m["role"]]
+        who = {"provider": "Proveedor", "assistant": "MiProveedor (asistente)", "agent": "Equipo interno", "system": "Sistema"}[m["role"]]
         body = m["body"]
         if m.get("attachments"):
             for a in m["attachments"]:
@@ -319,7 +319,7 @@ def _fallback(teams, history, text, attachments, ticket, force_ticket=False, con
         reply = "Recibido. Sumé tu mensaje al ticket y avisé al equipo para que lo revise."
         create = False
     elif greeting_only:
-        reply = ("¡Hola! Soy el asistente del portal. Contame tu consulta o reclamo (por ejemplo, el estado de un pago, "
+        reply = ("¡Hola! Soy MiProveedor, el asistente virtual de Mesa de Proveedores. Contame tu consulta o reclamo (por ejemplo, el estado de un pago, "
                  "un certificado de servicios rechazado, una entrega en base o un incidente en locación) y adjuntá la documentación si la tenés.")
         create = False
     else:

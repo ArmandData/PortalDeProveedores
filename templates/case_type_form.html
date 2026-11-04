@@ -31,7 +31,7 @@
       <div class="field">
         <label for="f-description">Descripción</label>
         <textarea class="textarea" id="f-description" name="description" maxlength="300" style="min-height:72px" placeholder="Qué casos entran en este tipo">{{ c.description }}</textarea>
-        <span class="hint">El asistente la usa para decidir qué tipo corresponde a cada pedido.</span>
+        <span class="hint">MiProveedor la usa para decidir qué tipo corresponde a cada pedido.</span>
       </div>
       <div class="form-grid">
         <div class="field">
@@ -46,7 +46,7 @@
           <select class="select" id="f-priority" name="priority" {{ invalid('priority') }}>
             {% for k, v in PRIORITY_LABELS.items() %}<option value="{{ k }}" {% if c.priority == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
           </select>
-          <span class="hint">El asistente puede subirla si el caso lo amerita, nunca bajarla.</span>
+          <span class="hint">MiProveedor puede subirla si el caso lo amerita, nunca bajarla.</span>
           {{ err('priority') }}
         </div>
       </div>
@@ -83,10 +83,10 @@
       <div class="field">
         <label for="f-keywords">Palabras clave</label>
         <input class="input" id="f-keywords" name="keywords" value="{{ c.keywords }}" maxlength="500" placeholder="Ej.: no me pagaron, deuda, pago vencido">
-        <span class="hint">Separadas por coma. Ayudan a reconocer el tipo cuando el asistente funciona sin IA.</span>
+        <span class="hint">Separadas por coma. Ayudan a reconocer el tipo cuando MiProveedor funciona sin IA.</span>
       </div>
       <div class="field">
-        <label class="checkbox"><input type="checkbox" name="active" value="1" {% if c.active %}checked{% endif %} {{ invalid('active') }}>Activo: el asistente puede usar este tipo para tickets nuevos</label>
+        <label class="checkbox"><input type="checkbox" name="active" value="1" {% if c.active %}checked{% endif %} {{ invalid('active') }}>Activo: MiProveedor puede usar este tipo para tickets nuevos</label>
         {{ err('active') }}
       </div>
       <div class="form-actions">

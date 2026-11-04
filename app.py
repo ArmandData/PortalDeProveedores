@@ -1,4 +1,4 @@
-"""Portal de Proveedores — consultas y reclamos con asistente IA y ticketera."""
+"""Mesa de Proveedores — consultas y reclamos con el asistente MiProveedor y ticketera."""
 import functools
 import hashlib
 import json
@@ -2033,12 +2033,12 @@ def send_alert_email(provider, alerts):
     if not smtp_configured() or not to:
         return False
     msg = EmailMessage()
-    msg["Subject"] = f"Portal de Proveedores: {len(alerts)} alerta{'s' if len(alerts) > 1 else ''} de documentación"
+    msg["Subject"] = f"Mesa de Proveedores: {len(alerts)} alerta{'s' if len(alerts) > 1 else ''} de documentación"
     msg["From"] = os.environ["PORTAL_SMTP_FROM"]
     msg["To"] = to
     base = os.environ.get("PORTAL_BASE_URL", "").rstrip("/")
     lines = [f"Hola {provider['contacto_nombre'] or provider['razon_social']}:", "",
-             "Tenés documentación por vencer o con plazo de presentación próximo en el Portal de Proveedores de " + ai.COMPANY + ":", ""]
+             "Tenés documentación por vencer o con plazo de presentación próximo en Mesa de Proveedores, el portal de proveedores de " + ai.COMPANY + ":", ""]
     lines += [f"- {a['title']}. {a['body']}" + (f"\n  {base}{a['link']}" if base else "") for a in alerts]
     lines += ["", "Ingresá al portal, sección Mi documentación, para renovarla.", "", "Este es un mensaje automático."]
     msg.set_content("\n".join(lines))

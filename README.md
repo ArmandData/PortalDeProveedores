@@ -1,14 +1,14 @@
-# Portal de Proveedores · Oil&Gas
+# Mesa de Proveedores · Oil&Gas
 
 Canal único de consultas y reclamos entre una operadora de petróleo y gas y sus
 contratistas y proveedores de bienes y servicios (servicios de pozo, tubulares OCTG,
 transporte, etc.). Cada proveedor ingresa con su usuario y contraseña, elige el contrato al
-que se refiere y habla con un asistente de IA en lenguaje natural. El asistente responde lo
+que se refiere y habla con MiProveedor, el asistente de IA, en lenguaje natural. MiProveedor responde lo
 que puede y, si hace falta, crea un **ticket con ID** (`PRV-2026-00001`) y lo deriva al
 equipo que corresponde: certificación de servicios, QA/QC, HSE, pagos, etc.
 
 **Demo en línea:** https://portal-proveedores-ow1e.onrender.com ·
-**Instructivo de uso:** [docs/Instructivo Portal de Proveedores.docx](docs/Instructivo%20Portal%20de%20Proveedores.docx)
+**Instructivo de uso:** [docs/Instructivo Mesa de Proveedores.docx](docs/Instructivo%20Mesa%20de%20Proveedores.docx)
 
 > Todos los proveedores, contratos, yacimientos y documentos son ficticios.
 
@@ -56,7 +56,7 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
 ## Qué incluye
 
 **Para el proveedor**
-- **Asistente (pantalla principal):** chat en lenguaje natural. Antes de escribir, el
+- **MiProveedor (pantalla principal):** chat en lenguaje natural. Antes de escribir, el
   proveedor elige el contrato (o indica que no está relacionado con uno). Puede adjuntar
   hasta 10 archivos por mensaje (PDF, Word, Excel, TXT, CSV, HTML, XML, JSON e imágenes,
   15 MB c/u) con clic, arrastrando o pegando. Panel lateral con el ticket, su progreso,

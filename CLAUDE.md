@@ -1,4 +1,6 @@
-# Portal de Proveedores: reglas del negocio
+# Mesa de Proveedores: reglas del negocio
+
+Nombre del portal: **Mesa de Proveedores**. Nombre del asistente del chat: **MiProveedor** (se presenta como asistente virtual).
 
 ## Derivación de casos
 

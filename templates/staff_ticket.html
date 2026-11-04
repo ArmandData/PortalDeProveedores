@@ -34,7 +34,7 @@
               <div class="msg {% if m.role == 'agent' %}msg-me{% if m.internal %} msg-internal{% endif %}{% elif m.role == 'assistant' %}msg-bot{% else %}msg-agent{% endif %}">
                 {% if m.role == 'provider' %}{{ avatar(p) }}{% elif m.role == 'assistant' %}<span class="avatar avatar-bot" aria-hidden="true">{{ icon('sparkles', 'icon-sm') }}</span>{% endif %}
                 <div class="msg-body">
-                  <div class="msg-meta"><strong>{% if m.role == 'provider' %}{{ p.razon_social }}{% elif m.role == 'assistant' %}Asistente IA{% else %}{{ m.author }}{% if m.internal %} · Nota interna{% endif %}{% endif %}</strong><time>· {{ m.time }}</time></div>
+                  <div class="msg-meta"><strong>{% if m.role == 'provider' %}{{ p.razon_social }}{% elif m.role == 'assistant' %}MiProveedor (IA){% else %}{{ m.author }}{% if m.internal %} · Nota interna{% endif %}{% endif %}</strong><time>· {{ m.time }}</time></div>
                   {% if m.body %}<div class="bubble" {% if m.role == 'agent' and not m.internal %}style="background:var(--bubble-me);color:var(--bubble-me-text)"{% elif m.internal %}style="color:var(--text)"{% endif %}>{{ m.body | md }}</div>{% endif %}
                   {% if m.attachments %}<div class="files">{% for a in m.attachments %}
                     <a class="file-card" href="{{ a.url }}" target="_blank" rel="noopener"><span class="ext ext-{{ a.ext }}">{{ a.ext[:4] }}</span>
