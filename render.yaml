@@ -1,0 +1,34 @@
+# Despliegue en Render (https://render.com) — "New > Blueprint" y elegir este repositorio.
+services:
+  - type: web
+    name: portal-proveedores
+    runtime: python
+    plan: starter            # el plan gratuito borra los datos en cada reinicio; el disco requiere plan pago
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /login
+    disk:
+      name: portal-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: PORTAL_DB
+        value: /var/data/portal.db
+      - key: PORTAL_UPLOADS
+        value: /var/data/uploads
+      - key: PORTAL_HTTPS
+        value: "1"
+      - key: PORTAL_COMPANY_NAME
+        value: Nuestra Empresa
+      - key: PORTAL_SECRET_KEY
+        generateValue: true
+      - key: PORTAL_ADMIN_PASSWORD
+        generateValue: true
+      - key: PORTAL_PROVIDER_PASSWORD
+        generateValue: true
+      - key: PORTAL_AGENT_PASSWORD
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false          # Render la pide al crear el servicio

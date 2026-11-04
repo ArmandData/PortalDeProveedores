@@ -1,0 +1,6 @@
+flask>=3.0
+anthropic>=0.125
+python-docx>=1.1
+openpyxl>=3.1
+pypdf>=5.0
+gunicorn>=22.0
