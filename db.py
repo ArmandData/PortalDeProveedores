@@ -270,7 +270,7 @@ TEAMS = [
     ("pagos", "Tesorería y Pagos", "Estado de pagos, fechas de cobro, órdenes de pago, transferencias, compensaciones.", 24, "#0f766e"),
     ("facturacion", "Cuentas a Pagar", "Recepción, validación y rechazo de facturas, notas de crédito y débito.", 48, "#2563eb"),
     ("certificacion", "Certificación de Servicios", "Partes diarios, actas de medición, certificados de avance y hojas de entrada de servicio (HES) previas a facturar.", 48, "#0891b2"),
-    ("compras", "Compras y Contratos", "Órdenes de compra, cotizaciones, licitaciones, ajustes de tarifa (polinómica), adendas y renovaciones.", 48, "#7c3aed"),
+    ("compras", "Compras", "Órdenes de compra, cotizaciones y licitaciones.", 48, "#7c3aed"),
     ("logistica", "Logística y Almacenes", "Entregas en bases y almacenes, turnos de descarga, remitos, materiales en locación y transporte.", 24, "#c2410c"),
     ("calidad", "Calidad e Inspección (QA/QC)", "Inspección de materiales, certificados de calidad (mill certificates), no conformidades y devoluciones.", 72, "#be123c"),
     ("hse", "HSE: Seguridad, Salud y Ambiente", "Incidentes y casi accidentes, eventos ambientales, permisos de trabajo, inducciones y requisitos de seguridad.", 4, "#dc2626"),
@@ -278,8 +278,11 @@ TEAMS = [
     ("maestro", "Alta y Documentación de Proveedores", "Alta, datos bancarios y fiscales, seguros (ART, pólizas), habilitaciones y documentación para ingresar a yacimiento.", 72, "#475569"),
     ("general", "Mesa de Ayuda General", "Consultas que no encajan en otra categoría o requieren análisis.", 48, "#4f46e5"),
     ("performance", "Proveedores y Performance", "Evaluación de desempeño y scoring de proveedores, bloqueos y habilitación para operar.", 72, "#0e7490"),
+    ("contratos", "Administración de Contratos", "Toda modificación de un contrato: adendas, cambios de alcance, monto o plazo, prórrogas y "
+     "renovaciones, ajustes y redeterminación de precios (polinómica), cesiones y rescisiones.", 48, "#9333ea"),
 ]
-PERFORMANCE_TEAM = TEAMS[-1]
+PERFORMANCE_TEAM = TEAMS[-2]
+CONTRACTS_TEAM = TEAMS[-1]
 
 
 # Tipos de caso iniciales: (equipo, nombre, descripción, tipo, prioridad, h 1ra respuesta, h resolución, palabras clave)
@@ -296,8 +299,6 @@ CASE_TYPES = [
      "reclamo", "alta", 12, 48, "hes, hoja de entrada, certificado de avance, parte diario, partes diarios, acta de medicion, certificado de servicio"),
     ("compras", "Orden de compra, cotización o licitación", "Consultas sobre OC emitidas, pedidos de cotización y procesos licitatorios.",
      "consulta", "media", 24, 48, "orden de compra, cotiza, licitacion, presupuesto"),
-    ("compras", "Ajuste de tarifa, adenda o renovación", "Pedidos de ajuste por polinómica, adendas y renovaciones de contrato.",
-     "consulta", "media", 24, 72, "polinomica, ajuste de tarifa, tarifa, adenda, renovacion del contrato, renovar el contrato"),
     ("logistica", "Entrega, turno de descarga o remito", "Coordinación de entregas en bases y almacenes, turnos y remitos.",
      "consulta", "media", 8, 24, "entrega, turno, descarga, remito, almacen, flete, envio"),
     ("logistica", "Faltante o demora en recepción", "Diferencias de cantidades, esperas o problemas al recibir materiales.",
@@ -318,6 +319,15 @@ CASE_TYPES = [
      "consulta", "alta", 24, 72, "cbu, datos bancarios, domicilio fiscal, razon social, alta de proveedor"),
     ("general", "Otra consulta", "Consultas que no encajan en otro tipo de caso.",
      "consulta", "media", 24, 48, ""),
+    ("contratos", "Adenda o modificación de contrato", "Cambios de alcance, monto, plazo o condiciones de un contrato vigente.",
+     "consulta", "alta", 24, 72, "adenda, modificacion del contrato, modificar el contrato, ampliacion, ampliar el contrato, reduccion, "
+     "cambio de alcance, aumento del monto, cambio de condiciones, cambiar el contrato"),
+    ("contratos", "Prórroga o renovación de contrato", "Extensión del plazo o renovación de un contrato próximo a vencer o vencido.",
+     "consulta", "alta", 24, 72, "prorroga, renovacion del contrato, renovar el contrato, extender el contrato, extension del contrato"),
+    ("contratos", "Ajuste o redeterminación de precios", "Ajustes de tarifa por fórmula polinómica y redeterminación de precios del contrato.",
+     "consulta", "media", 24, 72, "polinomica, ajuste de tarifa, redeterminacion, actualizacion de precios, ajuste de precio, tarifa"),
+    ("contratos", "Rescisión o cesión de contrato", "Pedidos de rescisión anticipada, baja o cesión del contrato a un tercero.",
+     "reclamo", "alta", 24, 72, "rescision, rescindir, cesion del contrato, ceder el contrato, baja del contrato"),
     ("performance", "Evaluación de desempeño o bloqueo", "Consultas o reclamos sobre la evaluación del proveedor, una suspensión o un bloqueo para operar.",
      "consulta", "alta", 24, 72, "evaluacion, desempeno, scoring, puntaje, calificacion, suspendid, suspension, bloquead, bloqueo, inhabilitad"),
 ]
@@ -368,6 +378,7 @@ def init_db(seed=True):
         _seed_case_types(conn)
     if seed:
         _ensure_performance_team(conn)
+        _ensure_contracts_team(conn)
     if seed and conn.execute("SELECT COUNT(*) FROM provider_evaluations").fetchone()[0] == 0:
         _seed_scoring(conn)
     if seed and conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0] == 0:
@@ -504,6 +515,40 @@ def _seed_requirements(conn):
     sub(3, REQUIREMENTS[0][0], "aprobado", 150, signer=tra)
     sub(3, REQUIREMENTS[4][0], "aprobado", 30, data=dict(periodo="Oct 2025 a Sep 2026", horas_hombre=96000, accidentes=4, dias_perdidos=120, fatalidades=0),
         file="Certificado siniestralidad Galeno ART.pdf")
+
+
+def _ensure_contracts_team(conn):
+    """Bases anteriores: crea Administración de Contratos y le pasa todo lo que es modificación de contrato."""
+    slug, name, desc, sla, color = CONTRACTS_TEAM
+    if conn.execute("SELECT 1 FROM teams WHERE slug=?", (slug,)).fetchone():
+        return
+    team_id = conn.execute("INSERT INTO teams (slug, name, description, sla_hours, color) VALUES (?,?,?,?,?)", CONTRACTS_TEAM).lastrowid
+    compras = conn.execute("SELECT id FROM teams WHERE slug='compras'").fetchone()
+    if compras:
+        conn.execute("UPDATE teams SET name=?, description=? WHERE id=?", (TEAMS[3][1], TEAMS[3][2], compras[0]))
+    ref = conn.execute("SELECT password_hash FROM users WHERE role='agent' ORDER BY id LIMIT 1").fetchone()
+    if ref and not conn.execute("SELECT 1 FROM users WHERE username=?", (f"agente.{slug}",)).fetchone():
+        conn.execute("""INSERT INTO users (username,email,full_name,password_hash,role,team_id,created_at) VALUES (?,?,?,?,?,?,?)""",
+                     (f"agente.{slug}", f"{slug}@operadora.com", f"Agente {name}", ref[0], "agent", team_id, now_iso()))
+    ts = now_iso()
+    order = (conn.execute("SELECT COALESCE(MAX(sort_order), 0) FROM case_types").fetchone()[0] or 0) + 10
+    for (team, ct_name, ct_desc, kind, prio, resp_h, res_h, kws) in CASE_TYPES:
+        if team == slug and not conn.execute("SELECT 1 FROM case_types WHERE name=?", (ct_name,)).fetchone():
+            conn.execute("""INSERT INTO case_types (name, description, kind, team_id, priority, response_hours, resolution_hours,
+                            keywords, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                         (ct_name, ct_desc, kind, team_id, prio, resp_h, res_h, kws, order, ts, ts))
+            order += 10
+    if compras:
+        # El tipo anterior de Compras («Ajuste de tarifa, adenda o renovación») pasa a Administración de Contratos.
+        old = conn.execute("SELECT id FROM case_types WHERE team_id=? AND name LIKE 'Ajuste de tarifa, adenda%'", (compras[0],)).fetchone()
+        if old:
+            conn.execute("UPDATE case_types SET active=0, updated_at=? WHERE id=?", (ts, old[0]))
+            for (tid,) in conn.execute("""SELECT id FROM tickets WHERE case_type_id=? AND status IN ('nuevo','en_curso','esperando_proveedor')""",
+                                       (old[0],)).fetchall():
+                conn.execute("UPDATE tickets SET team_id=?, assignee_id=NULL WHERE id=?", (team_id, tid))
+                conn.execute("INSERT INTO ticket_events (ticket_id, event, detail, created_at) VALUES (?,?,?,?)",
+                             (tid, "team", "Derivado a Administración de Contratos: las modificaciones de contrato las gestiona ese equipo", ts))
+        conn.execute("UPDATE contracts SET team_id=? WHERE team_id=?", (team_id, compras[0]))
 
 
 def _ensure_performance_team(conn):
@@ -650,16 +695,16 @@ def _seed(conn):
     contracts = [
         (1, "CT-2025-0311", "Servicio de workover y pulling con 2 equipos y dotación completa", "servicios",
          d(-210), d(520), 4_800_000, "USD", "45 días fecha de certificación aprobada", "Ing. Laura Méndez (Contratos Upstream)",
-         "compras", "Bloque Loma Negra Norte"),
+         "contratos", "Bloque Loma Negra Norte"),
         (1, "CT-2024-0198", "Alquiler de equipo de pulling con operación para mantenimiento de pozos", "servicios",
          d(-700), d(21), 1_350_000, "USD", "45 días fecha de certificación aprobada", "Ing. Pablo Ruiz (Producción)",
          "certificacion", "Bloque Sierra Azul"),
         (1, "CT-2023-0077", "Servicio de cementación de pozos, campaña de perforación 2023-2024", "servicios",
          d(-1050), d(-45), 2_100_000, "USD", "45 días fecha de certificación aprobada", "Ing. Laura Méndez (Contratos Upstream)",
-         "compras", "Área Añelo Este"),
+         "contratos", "Área Añelo Este"),
         (2, "CT-2025-0420", "Acuerdo marco de suministro de casing 9 5/8\" y tubing 2 7/8\" API 5CT con accesorios", "marco",
          d(-150), d(580), 2_350_000, "USD", "60 días fecha de recepción conforme", "Lic. Sofía Arce (Abastecimiento)",
-         "compras", "Base Operativa Añelo"),
+         "contratos", "Base Operativa Añelo"),
         (3, "CT-2025-0388", "Transporte de agua y arena para fractura hidráulica en locaciones del área", "servicios",
          d(-90), d(275), 980_000_000, "ARS", "30 días fecha de certificación aprobada", "Ing. Diego Paz (Completación)",
          "logistica", "Área Añelo Este"),
@@ -744,7 +789,7 @@ def _seed(conn):
          "Consulta por la fecha de pago del certificado mensual de workover.", "HES 1000{n}", "Bloque Loma Negra Norte"),
         (1, 2, "certificacion", "reclamo", "media", "Acta de medición pendiente de firma",
          "El acta de medición del equipo de pulling sigue sin firma de Producción.", "Acta AM-{n}", "Bloque Sierra Azul"),
-        (1, 1, "compras", "consulta", "media", "Ajuste de tarifa por polinómica",
+        (1, 1, "contratos", "consulta", "media", "Ajuste de tarifa por polinómica",
          "Solicitud de actualización de tarifas según la fórmula polinómica del contrato.", "CT-2025-0311", "Bloque Loma Negra Norte"),
         (1, 3, "facturacion", "reclamo", "alta", "Factura rechazada por HES incorrecta",
          "Factura de cementación rechazada por referenciar una HES de otro contrato.", "FC A 0004-000{n}", "Área Añelo Este"),

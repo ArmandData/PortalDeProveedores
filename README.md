@@ -30,7 +30,7 @@ Requiere Python 3.9 o superior. La base SQLite y los archivos se guardan en `dat
 | Proveedor: Tubulares del Neuquén S.R.L. (casing y tubing OCTG) | `30714662100` |
 | Proveedor: Transportes Añelo S.A. (agua y arena de fractura) | `30717093425` |
 | Administrador (ve todos los equipos) | `admin` |
-| Agente de un equipo | `agente.pagos`, `agente.facturacion`, `agente.certificacion`, `agente.compras`, `agente.logistica`, `agente.calidad`, `agente.hse`, `agente.impuestos`, `agente.maestro`, `agente.general` |
+| Agente de un equipo | `agente.pagos`, `agente.facturacion`, `agente.certificacion`, `agente.compras`, `agente.logistica`, `agente.calidad`, `agente.hse`, `agente.impuestos`, `agente.maestro`, `agente.contratos`, `agente.performance`, `agente.general` |
 
 Las contraseñas **no están en el código**. Al crear la base se toman de las variables
 `PORTAL_PROVIDER_PASSWORD`, `PORTAL_ADMIN_PASSWORD` y `PORTAL_AGENT_PASSWORD`; si no
@@ -127,7 +127,7 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
   elección; si no se elige, sigue la configuración del sistema.
 
 ### Específico de Oil&Gas
-- **10 equipos** con plazos propios, entre ellos *Certificación de Servicios* (partes
+- **12 equipos** con plazos propios, entre ellos *Certificación de Servicios* (partes
   diarios, actas de medición, HES), *Calidad e Inspección QA/QC* (mill certificates,
   API 5CT), *HSE* (incidentes, derrames, permisos de trabajo; respuesta en 4 h) y *Alta y
   Documentación de Proveedores* (seguros y habilitaciones para ingresar a yacimiento).

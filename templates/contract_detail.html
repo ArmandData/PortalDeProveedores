@@ -66,7 +66,7 @@
            aria-label="{% if c.days_left >= 0 %}Quedan {{ c.days_left }} días{% else %}Finalizado{% endif %}">
         <i style="width: {{ c.progress }}%"></i></div>
       <p class="muted" style="font-size:13px;margin-top:8px">{% if c.days_left >= 0 %}Quedan <strong>{{ c.days_left }}</strong> días · finaliza el {{ (c.fecha_fin ~ ' 00:00:00') | fecha(False) }}{% else %}Finalizó hace {{ -c.days_left }} días{% endif %}</p>
-      <div class="lock-note">{{ icon('shield', 'icon-sm') }}<span>Las condiciones del contrato solo pueden modificarse mediante una adenda gestionada por Compras.</span></div>
+      <div class="lock-note">{{ icon('shield', 'icon-sm') }}<span>Las condiciones del contrato solo pueden modificarse mediante una adenda gestionada por Administración de Contratos.</span></div>
     </aside>
   </div>
 </div>

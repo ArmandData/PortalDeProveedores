@@ -676,6 +676,11 @@ def api_send(conv_id):
             log_event(ticket["id"], "status", f"{ticket['status']} → en_curso (respuesta del proveedor)")
         db.execute(f"UPDATE tickets SET {', '.join(k + '=?' for k in updates)} WHERE id=?", (*updates.values(), ticket["id"]))
     elif result.get("create_ticket"):
+        if ai.is_contract_modification(text) and result["team"] != "hse" and any(t["slug"] == "contratos" for t in teams):
+            # Regla de la empresa: toda modificación de contrato la gestiona Administración de Contratos.
+            if result["team"] != "contratos":
+                result["case_type"] = None
+            result["team"] = "contratos"
         team = next(t for t in teams if t["slug"] == result["team"])
         # El tipo de caso define equipo, tipo, prioridad mínima y plazos (internos).
         ctype = next((c for c in case_types if c["id"] == result.get("case_type")), None) \
@@ -683,6 +688,8 @@ def api_send(conv_id):
         kind = result["kind"] if result["kind"] in ("consulta", "reclamo") else "consulta"
         priority = result["priority"]
         now = datetime.now().replace(microsecond=0)
+        if ctype and team["slug"] == "contratos" and ctype["team_id"] != team["id"]:
+            ctype = ai.match_case_type(case_types, team["id"], f"{text} {result.get('summary', '')}")
         if ctype:
             team = next((t for t in teams if t["id"] == ctype["team_id"]), team)
             kind = ctype["kind"]

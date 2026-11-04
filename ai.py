@@ -44,7 +44,7 @@ KNOWLEDGE_BASE = """
 - Circuito de materiales: los materiales se entregan en la base o almacén indicado en la orden de compra, con turno previo y remito con N° de OC. Calidad (QA/QC) inspecciona en recepción; los tubulares OCTG requieren certificado de calidad de la colada (mill certificate) y cumplir API 5CT. Sin recepción conforme no se puede facturar.
 - Facturación: factura electrónica enviada únicamente por este portal, con N° de OC y de HES (servicios) o de remito con recepción conforme (materiales). Se rechazan facturas con CUIT receptor incorrecto o importes que no coinciden con la OC / certificado.
 - Plazos y medios de pago: según la condición del contrato, contados desde la certificación aprobada o la recepción conforme. Corridas de pago martes y viernes. Pago por transferencia a la cuenta registrada; contratos en USD se pagan al tipo de cambio que fija el contrato.
-- Ajustes de tarifa: los contratos de servicios se actualizan por la fórmula polinómica pactada; los pedidos de ajuste se tramitan con Compras y Contratos.
+- Modificaciones de contrato: adendas, cambios de alcance, monto o plazo, prórrogas, renovaciones, ajustes de tarifa por la fórmula polinómica pactada, redeterminación de precios, cesiones y rescisiones se tramitan siempre con Administración de Contratos.
 - Retenciones: IVA, Ganancias, Ingresos Brutos (Convenio Multilateral cuando corresponde) y regímenes provinciales. Los certificados de retención se emiten con cada orden de pago.
 - Ingreso a yacimiento: para que el personal, vehículos y equipos del proveedor ingresen a locación deben estar vigentes: ART con nómina, póliza de responsabilidad civil, seguro de flota y equipos, inducción HSE del personal, habilitaciones de equipos (izaje, etc.) y revisión técnica de vehículos. Con documentación obligatoria vencida se bloquea el ingreso. Las renovaciones se cargan por este portal y las valida Alta y Documentación de Proveedores.
 - HSE: todo incidente, accidente, casi accidente, derrame o evento ambiental en locación se reporta de inmediato al supervisor de la operadora en el sitio y por la línea de emergencias del yacimiento; luego se registra en este portal para HSE. Los trabajos en locación requieren permiso de trabajo emitido por la operadora.
@@ -68,7 +68,8 @@ Tu trabajo en cada mensaje:
 4. Si falta un dato imprescindible para que el equipo pueda actuar (por ej. N° de factura u OC), pedilo de forma específica en una sola pregunta y NO crees el ticket todavía — salvo que el proveedor ya haya insistido o sea un reclamo urgente: en ese caso crealo igual e indicá el dato faltante en el resumen.
 5. Cada conversación indica el contrato al que se refiere (`<contrato_elegido>`). Usá esos datos para responder consultas sobre el contrato (vigencia, monto, condición de pago, responsable) sin abrir ticket. El equipo dueño del contrato es una pista para derivar, pero manda la categoría del pedido (p. ej. una factura rechazada va a Cuentas a Pagar aunque el contrato sea de Compras). Si el contrato está vencido o por vencer y el pedido lo involucra, mencionalo.
 6. Revisá `<documentacion_proveedor>`: si el pedido involucra ingreso a yacimiento, operar en locación o la renovación de un documento, y hay documentos obligatorios vencidos o por vencer, avisalo de forma concreta (cuál, desde cuándo) y explicá que debe cargar la renovación por el portal. Para renovaciones de seguros o habilitaciones, el equipo es `maestro`.
-7. Seguridad primero: si el mensaje describe un incidente, accidente, lesión, derrame, fuga, incendio o evento ambiental, creá el ticket para `hse` con prioridad "urgente", y en la respuesta indicá primero que, si la situación sigue en curso, debe avisar de inmediato al supervisor de la operadora en el sitio y a la línea de emergencias del yacimiento.
+7. Modificaciones de contrato: todo pedido de modificar un contrato (adenda, ampliación o reducción de alcance, monto o plazo, prórroga, renovación, ajuste o redeterminación de precios por polinómica, cesión o rescisión) va SIEMPRE al equipo `contratos`, aunque el contrato pertenezca a otro equipo. Compras solo atiende órdenes de compra, cotizaciones y licitaciones.
+7b. Seguridad primero: si el mensaje describe un incidente, accidente, lesión, derrame, fuga, incendio o evento ambiental, creá el ticket para `hse` con prioridad "urgente", y en la respuesta indicá primero que, si la situación sigue en curso, debe avisar de inmediato al supervisor de la operadora en el sitio y a la línea de emergencias del yacimiento.
 8. Si la conversación YA tiene un ticket abierto, no crees otro (create_ticket = false): el mensaje se suma automáticamente a ese ticket. Confirmá que lo vas a informar al equipo.
 9. Si en el historial el asistente ya avisó que un documento adjunto está en otro ticket abierto, creá un ticket nuevo solo si el proveedor aclara que es un pedido distinto. Si acepta seguir en el ticket existente, o no queda claro, no crees ticket (create_ticket = false) y recordale el número del ticket abierto.
 
@@ -222,7 +223,9 @@ _KEYWORDS = {
     "facturacion": ["factura", "nota de credito", "nota de debito", "comprobante", "fc "],
     "certificacion": ["parte diario", "partes diarios", "certificado de servicio", "certificacion", "certificado de avance",
                       "hes", "hoja de entrada", "acta de medicion", "company man"],
-    "compras": ["cotiza", "precio", "licitacion", "presupuesto", "renovacion", "adenda", "polinomica", "ajuste de tarifa", "tarifa"],
+    "compras": ["cotiza", "licitacion", "presupuesto", "orden de compra"],
+    "contratos": ["adenda", "polinomica", "ajuste de tarifa", "tarifa", "redeterminacion", "prorroga", "rescision", "rescindir",
+                  "cesion del contrato", "ampliacion del contrato", "renovacion del contrato", "renovar el contrato", "modificacion del contrato"],
     "logistica": ["entrega", "turno", "remito", "descarga", "envio", "flete", "almacen", "base operativa", "faltan", "faltante", "incomplet"],
     "calidad": ["mill cert", "certificado de calidad", "colada", "inspeccion", "no conformidad", "devolucion", "defect",
                 "rosca", "api 5ct", "retenido", "retuvieron"],
@@ -236,6 +239,22 @@ _KEYWORDS = {
 }
 _CLAIM = ["reclamo", "reclam", "no me pagaron", "rechaz", "problema", "error", "demora", "atras", "urgente", "queja",
           "incomplet", "faltan", "nunca", "todavia no", "aun no"]
+
+
+# Modificación de contrato: verbo o sustantivo de cambio cerca de «contrato», o términos que siempre lo son.
+_CONTRACT_CHANGE = re.compile(
+    r"\b(adenda|polinomica|redeterminacion|rescision|rescindir|prorroga|prorrogar|baja del contrato)\w*"
+    r"|\b(modific|cambi|ampli|extend|extension|renov|reduc|ajust|actualiz|ced|cesion|rescind|prorrog|aument)\w*"
+    r"(\s+\w+){0,4}\s+(del?|el|al|nuestro|mi)?\s*contrato"
+    r"|\bcontrato\b(\s+\w+){0,4}\s+(modific|ampli|renov|prorrog|extend|ajust|rescind|ced)\w*")
+
+
+def is_contract_modification(text):
+    """True si el pedido es modificar un contrato. Las pólizas y seguros no cuentan (son de Alta y Documentación)."""
+    t = _norm(text)
+    if re.search(r"poliza|seguro|\bart\b", t) and "contrato" not in t:
+        return False
+    return bool(_CONTRACT_CHANGE.search(t))
 
 
 def match_case_type(case_types, team_id, text):
@@ -273,6 +292,8 @@ def _fallback(teams, history, text, attachments, ticket, force_ticket=False, con
         scores["certificacion"] += 10
     if re.search(r"poliza|seguro|\bart\b|habilitacion|documentacion|induccion|\brto\b|\bvtv\b", own) and "incidente" not in own:
         scores["maestro"] += 10  # renovaciones de documentación: Alta y Documentación de Proveedores
+    if is_contract_modification(own):
+        scores["contratos"] += 20  # modificaciones de contrato: siempre Administración de Contratos
     hse_event = re.search(r"incidente|accidente|derrame|fuga|incendio|lesion|herid|evento ambiental", own)
     if hse_event:
         scores["hse"] += 50  # seguridad primero
