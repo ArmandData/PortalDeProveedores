@@ -21,7 +21,7 @@ services:
       - key: PORTAL_HTTPS
         value: "1"
       - key: PORTAL_COMPANY_NAME
-        value: Nuestra Empresa
+        value: Operadora Energética (demo)
       - key: PORTAL_SECRET_KEY
         generateValue: true
       - key: PORTAL_ADMIN_PASSWORD

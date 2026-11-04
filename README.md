@@ -1,9 +1,16 @@
-# Portal de Proveedores
+# Portal de Proveedores · Oil&Gas
 
-Canal único de consultas y reclamos entre los proveedores y la empresa. Cada proveedor
-ingresa con su usuario y contraseña, elige el contrato al que se refiere y habla con un
-asistente de IA en lenguaje natural. El asistente responde lo que puede y, si hace falta,
-crea un **ticket con ID** (`PRV-2026-00001`) y lo deriva al equipo que corresponde.
+Canal único de consultas y reclamos entre una operadora de petróleo y gas y sus
+contratistas y proveedores de bienes y servicios (servicios de pozo, tubulares OCTG,
+transporte, etc.). Cada proveedor ingresa con su usuario y contraseña, elige el contrato al
+que se refiere y habla con un asistente de IA en lenguaje natural. El asistente responde lo
+que puede y, si hace falta, crea un **ticket con ID** (`PRV-2026-00001`) y lo deriva al
+equipo que corresponde: certificación de servicios, QA/QC, HSE, pagos, etc.
+
+**Demo en línea:** https://portal-proveedores-ow1e.onrender.com ·
+**Instructivo de uso:** [docs/Instructivo Portal de Proveedores.docx](docs/Instructivo%20Portal%20de%20Proveedores.docx)
+
+> Todos los proveedores, contratos, yacimientos y documentos son ficticios.
 
 ## Cómo ejecutarlo
 
@@ -19,10 +26,11 @@ Requiere Python 3.9 o superior. La base SQLite y los archivos se guardan en `dat
 
 | Rol | Usuario |
 |---|---|
-| Proveedor (Distribuidora Andina S.A.) | `30712345671` |
-| Proveedor (Juan Pérez, monotributista) | `20287654325` |
+| Proveedor: Servicios Petroleros Patagónicos S.A. (workover y pulling) | `30715829343` |
+| Proveedor: Tubulares del Neuquén S.R.L. (casing y tubing OCTG) | `30714662100` |
+| Proveedor: Transportes Añelo S.A. (agua y arena de fractura) | `30717093425` |
 | Administrador (ve todos los equipos) | `admin` |
-| Agente de un equipo | `agente.pagos`, `agente.facturacion`, `agente.compras`, `agente.logistica`, `agente.calidad`, `agente.impuestos`, `agente.maestro`, `agente.general` |
+| Agente de un equipo | `agente.pagos`, `agente.facturacion`, `agente.certificacion`, `agente.compras`, `agente.logistica`, `agente.calidad`, `agente.hse`, `agente.impuestos`, `agente.maestro`, `agente.general` |
 
 Las contraseñas **no están en el código**. Al crear la base se toman de las variables
 `PORTAL_PROVIDER_PASSWORD`, `PORTAL_ADMIN_PASSWORD` y `PORTAL_AGENT_PASSWORD`; si no
@@ -55,8 +63,12 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
   equipo, prioridad y plazo.
 - **Mis tickets:** listado con filtros (abiertos / resueltos / todos), búsqueda por ID,
   factura, OC o contrato, y aviso de respuestas nuevas.
-- **Mis contratos:** contratos vigentes, por vencer y vencidos, con detalle, PDF, tickets
-  asociados y un botón para iniciar una consulta sobre ese contrato.
+- **Mis contratos:** contratos vigentes, por vencer y vencidos, con yacimiento o área,
+  detalle, PDF, tickets asociados y un botón para iniciar una consulta sobre ese contrato.
+- **Mi documentación:** ART, pólizas, seguros de flota, inducciones HSE, habilitaciones
+  de equipos, RTO y certificaciones (ISO, API 5CT), con vencimientos y alertas. Marca los
+  documentos que **bloquean el ingreso a yacimiento** si vencen y tiene un botón
+  **Renovar** que abre el asistente con el pedido listo para adjuntar la constancia.
 - **Mi perfil:** razón social, CUIT, condición de IVA, domicilio, datos bancarios
   (enmascarados), condición de pago, contacto editable, foto de perfil y cambio de
   contraseña. Los datos fiscales y bancarios solo cambian mediante ticket (antifraude).
@@ -64,9 +76,21 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
 **Para los equipos internos** (`/equipo`)
 - Bandeja ordenada por prioridad y vencimiento, con filtros por equipo, estado,
   prioridad y contrato.
-- Detalle del ticket: resumen automático, conversación completa, respuesta al proveedor o
-  nota interna (con adjuntos), cambio de estado, prioridad, equipo (re-derivación) y
-  asignado, ficha del proveedor y del contrato, e historial de eventos.
+- Detalle del ticket: resumen automático con referencias (OC, HES, remitos, pozos) y
+  locación, conversación completa, respuesta al proveedor o nota interna (con adjuntos),
+  cambio de estado, prioridad, equipo (re-derivación) y asignado, estado de la
+  documentación del proveedor, ficha del contrato e historial de eventos.
+
+### Específico de Oil&Gas
+- **10 equipos** con plazos propios, entre ellos *Certificación de Servicios* (partes
+  diarios, actas de medición, HES), *Calidad e Inspección QA/QC* (mill certificates,
+  API 5CT), *HSE* (incidentes, derrames, permisos de trabajo; respuesta en 4 h) y *Alta y
+  Documentación de Proveedores* (seguros y habilitaciones para ingresar a yacimiento).
+- **Seguridad primero:** un mensaje que describe un incidente, derrame o lesión se deriva
+  a HSE con prioridad urgente y la respuesta empieza recordando avisar en el sitio.
+- **Locación:** la IA detecta yacimiento, bloque, pozo o base y lo guarda en el ticket.
+- **Circuito servicio → parte diario → certificado/HES → factura** y **material → base →
+  inspección → recepción conforme → factura** cargados en la base de conocimiento de la IA.
 
 ## Cómo deriva la IA
 
@@ -74,7 +98,9 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
 mensaje con sus adjuntos (los PDF e imágenes van como documentos nativos; Word, Excel,
 HTML y texto se convierten a texto). Claude devuelve una salida estructurada
 (JSON Schema) con la respuesta, el tipo (consulta/reclamo), el equipo, la prioridad, si
-corresponde abrir ticket, asunto, resumen y referencias (facturas, OC, remitos).
+corresponde abrir ticket, asunto, resumen, referencias (facturas, OC, HES, remitos, pozos)
+y locación. También recibe la documentación del proveedor con sus vencimientos, para
+advertir cuando algo vencido impide operar en yacimiento.
 
 - Modelo: `claude-opus-5-5`, esfuerzo `low` para que el chat responda rápido
   (configurable con `PORTAL_AI_MODEL` y `PORTAL_AI_EFFORT`).

@@ -178,12 +178,32 @@ def serialize_contract(c):
     if not c:
         return None
     return {k: c[k] for k in ("id", "numero", "objeto", "tipo_label", "vigencia", "status", "status_label",
-                              "monto_fmt", "condicion_pago", "team_name", "days_left")}
+                              "monto_fmt", "condicion_pago", "team_name", "days_left", "yacimiento")}
+
+
+DOC_STATUS_LABELS = {"vigente": "Vigente", "por_vencer": "Por vencer", "vencido": "Vencido", "permanente": "Sin vencimiento"}
+DOC_ORDER = {"vencido": 0, "por_vencer": 1, "vigente": 2, "permanente": 3}
+
+
+def provider_documents(provider_id):
+    """Documentación del proveedor con estado calculado, ordenada por urgencia."""
+    items = []
+    for r in db.query("SELECT * FROM provider_documents WHERE provider_id=? ORDER BY categoria, nombre", (provider_id,)):
+        d = dict(r)
+        d["status"], d["days_left"] = db.document_status(r)
+        d["status_label"] = DOC_STATUS_LABELS[d["status"]]
+        d["vence_fmt"] = fmt_fecha(d["vence"] + " 00:00:00", False) if d["vence"] else "—"
+        items.append(d)
+    items.sort(key=lambda d: (DOC_ORDER[d["status"]], d["days_left"] if d["days_left"] is not None else 99999))
+    summary = {k: sum(1 for d in items if d["status"] == k) for k in DOC_STATUS_LABELS}
+    summary["bloqueantes"] = sum(1 for d in items if d["status"] == "vencido" and d["bloquea_ingreso"])
+    return items, summary
 
 
 app.jinja_env.globals.update(STATUS_LABELS=STATUS_LABELS, STATUS_LABELS_STAFF=STATUS_LABELS_STAFF,
                              PRIORITY_LABELS=PRIORITY_LABELS, sla_state=sla_state, ai_enabled=ai.ai_enabled,
-                             company=ai.COMPANY, CONTRACT_STATUS_LABELS=CONTRACT_STATUS_LABELS)
+                             company=ai.COMPANY, CONTRACT_STATUS_LABELS=CONTRACT_STATUS_LABELS,
+                             DOC_STATUS_LABELS=DOC_STATUS_LABELS)
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +275,9 @@ def inject_nav():
                WHERE c.provider_id=? AND m.role='agent' AND m.internal=0
                AND m.created_at > COALESCE(c.provider_seen_at, '')""",
             (g.user["provider_id"],), one=True)["n"]
+        _, docs_summary = provider_documents(g.user["provider_id"])
+        ctx["nav_docs_alert"] = docs_summary["vencido"] + docs_summary["por_vencer"]
+        ctx["nav_docs_summary"] = docs_summary
     elif g.get("user"):
         ctx["nav_team"] = db.query("SELECT * FROM teams WHERE id=?", (g.user["team_id"],), one=True) if g.user["team_id"] else None
         ctx["nav_open"] = db.query(
@@ -334,7 +357,7 @@ def serialize_ticket(t):
                 priority=t["priority"], priority_label=PRIORITY_LABELS[t["priority"]], kind=t["kind"],
                 team=t["team_name"], team_color=t["team_color"], sla_state=state, sla_label=label,
                 reference=t["reference"] or "", created_at=fmt_fecha(t["created_at"]),
-                contract=t["contract_numero"] or "",
+                contract=t["contract_numero"] or "", location=t["location"] or "",
                 assignee=t["assignee_name"] or "Sin asignar", summary=t["summary"])
 
 
@@ -375,12 +398,15 @@ def list_conversations(provider_id):
 def assistant():
     conv_id = request.args.get("c", type=int)
     conv = own_conversation(conv_id) if conv_id else None
-    preselect = None
+    preselect, no_contract = None, False
     if not conv and request.args.get("contrato", type=int):
         preselect = own_contract(request.args.get("contrato", type=int), g.user["provider_id"])
+    elif not conv and request.args.get("sin_contrato") == "1":
+        no_contract = True
+    prefill = (request.args.get("texto") or "")[:500] if not conv else ""
     return render_template("assistant.html", conversations=list_conversations(g.user["provider_id"]),
                            active=conv, contracts=provider_contracts(g.user["provider_id"]),
-                           preselect=serialize_contract(preselect),
+                           preselect=serialize_contract(preselect), preselect_none=no_contract, prefill=prefill,
                            accept=",".join("." + e for e in extract.ALLOWED),
                            max_mb=extract.MAX_FILE_BYTES // (1024 * 1024), max_files=extract.MAX_FILES_PER_MESSAGE)
 
@@ -523,8 +549,10 @@ def api_send(conv_id):
     save_attachments(msg_id, files)
 
     teams = [dict(t) for t in db.query("SELECT * FROM teams ORDER BY id")]
+    documents, _ = provider_documents(provider["id"])
     result = ai.analyze(provider, teams, history, text, files, ticket=dict(ticket) if ticket else None,
-                        contract=contract)
+                        contract=contract, documents=documents)
+    location = (result.get("location") or "").strip() or (contract["yacimiento"] if contract and contract.get("yacimiento") else "")
     reply = result["reply"].strip()
 
     if ticket:
@@ -540,15 +568,18 @@ def api_send(conv_id):
         sla_due = (datetime.now() + timedelta(hours=team["sla_hours"])).replace(microsecond=0).isoformat(sep=" ")
         tid = db.execute(
             """INSERT INTO tickets (code, provider_id, conversation_id, contract_id, team_id, kind, priority, status, subject,
-               summary, reference, ai_confidence, sla_due, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (code, provider["id"], conv_id, contract["id"] if contract else None, team["id"], kind, result["priority"], "nuevo", result["subject"],
-             result["summary"], result.get("reference") or "", result.get("confidence"), sla_due, ts, ts))
+               summary, reference, location, ai_confidence, sla_due, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (code, provider["id"], conv_id, contract["id"] if contract else None, team["id"], kind, result["priority"], "nuevo",
+             result["subject"], result["summary"], result.get("reference") or "", location[:150], result.get("confidence"),
+             sla_due, ts, ts))
         log_event(tid, "created", f"Clasificado por IA ({result['engine']}) → {team['name']}, prioridad {result['priority']}, "
                                   f"confianza {int((result.get('confidence') or 0) * 100)}%")
         db.execute("UPDATE conversations SET title=? WHERE id=?", (result["subject"][:90], conv_id))
         reply += (f"\n\n**{'Reclamo registrado' if kind == 'reclamo' else 'Consulta registrada'}: {code}**\n"
                   f"- Equipo asignado: {team['name']}\n"
                   + (f"- Contrato: {contract['numero']}\n" if contract else "")
+                  + (f"- Locación: {location}\n" if location else "")
                   + f"- Plazo de respuesta: hasta {team['sla_hours']} h\n"
                   f"Te avisamos en esta conversación cuando el equipo responda.")
         ticket = ticket_for_conversation(conv_id)
@@ -576,7 +607,7 @@ def contracts():
     if status in CONTRACT_STATUS_LABELS:
         items = [c for c in items if c["status"] == status]
     if q:
-        items = [c for c in items if q in c["numero"].lower() or q in c["objeto"].lower()]
+        items = [c for c in items if q in c["numero"].lower() or q in c["objeto"].lower() or q in (c["yacimiento"] or "").lower()]
     open_by_contract = {r["contract_id"]: r["n"] for r in db.query(
         f"""SELECT contract_id, COUNT(*) AS n FROM tickets WHERE provider_id=? AND contract_id IS NOT NULL
             AND status IN ({','.join('?' * len(OPEN_STATUSES))}) GROUP BY contract_id""",
@@ -644,6 +675,18 @@ def ticket_detail(code):
     if not t:
         abort(404)
     return redirect(url_for("assistant", c=t["conversation_id"]))
+
+
+# ---------------------------------------------------------------------------
+# Proveedor: documentación y habilitaciones
+# ---------------------------------------------------------------------------
+@app.route("/documentacion")
+@login_required("provider")
+def documents():
+    items, summary = provider_documents(g.user["provider_id"])
+    status = request.args.get("estado", "")
+    shown = [d for d in items if d["status"] == status] if status in DOC_STATUS_LABELS else items
+    return render_template("documents.html", docs=shown, summary=summary, total=len(items), status=status)
 
 
 # ---------------------------------------------------------------------------
@@ -828,8 +871,10 @@ def staff_ticket_detail(code):
                       (t["team_id"],))
     teams = db.query("SELECT * FROM teams ORDER BY id")
     contract = own_contract(t["contract_id"], t["provider_id"]) if t["contract_id"] else None
+    docs, docs_summary = provider_documents(t["provider_id"])
     return render_template("staff_ticket.html", t=t, p=provider, messages=messages, events=events, agents=agents,
-                           teams=teams, contract=contract, accept=",".join("." + e for e in extract.ALLOWED))
+                           teams=teams, contract=contract, docs=docs, docs_summary=docs_summary,
+                           accept=",".join("." + e for e in extract.ALLOWED))
 
 
 @app.post("/equipo/tickets/<code>/responder")

@@ -40,19 +40,21 @@ def _get_client():
 # Ajustar a las políticas reales de la empresa.
 # ---------------------------------------------------------------------------
 KNOWLEDGE_BASE = """
-- Facturación: las facturas electrónicas se envían únicamente por este portal (adjuntando el PDF). Deben indicar el N° de Orden de Compra (OC) y el N° de remito. Se rechazan facturas sin OC, con CUIT receptor incorrecto o con importes que no coinciden con la OC.
-- Plazos de pago: según la condición pactada en el perfil del proveedor, contados desde la recepción de la factura válida. Las corridas de pago son los martes y viernes.
-- Medios de pago: transferencia bancaria a la cuenta (CBU) registrada en el perfil. Los cambios de CBU requieren constancia bancaria firmada y se gestionan con el equipo de Alta y Datos de Proveedor (nunca por e-mail).
-- Retenciones: se aplican retenciones de IVA, Ganancias e IIBB según normativa vigente. Los certificados de retención se emiten con cada orden de pago. Los certificados de exclusión deben cargarse antes de la fecha de pago.
-- Entregas: horario de recepción de lunes a viernes de 7 a 15 h, con turno previo. Toda entrega debe ir acompañada de remito con N° de OC.
-- Devoluciones por calidad: se notifican dentro de las 72 h hábiles de recibida la mercadería; el proveedor puede presentar descargo con evidencia.
-- Actualización de datos de contacto: el proveedor puede editarlos desde "Mi perfil". Datos fiscales y bancarios solo se modifican mediante ticket.
+- Circuito de servicios: el servicio se registra en partes diarios firmados por el company man / supervisor de la operadora. Con los partes aprobados, Certificación de Servicios emite el certificado de avance y la hoja de entrada de servicio (HES). Recién con la HES aprobada se puede facturar. Facturas de servicios sin N° de HES se rechazan.
+- Circuito de materiales: los materiales se entregan en la base o almacén indicado en la orden de compra, con turno previo y remito con N° de OC. Calidad (QA/QC) inspecciona en recepción; los tubulares OCTG requieren certificado de calidad de la colada (mill certificate) y cumplir API 5CT. Sin recepción conforme no se puede facturar.
+- Facturación: factura electrónica enviada únicamente por este portal, con N° de OC y de HES (servicios) o de remito con recepción conforme (materiales). Se rechazan facturas con CUIT receptor incorrecto o importes que no coinciden con la OC / certificado.
+- Plazos y medios de pago: según la condición del contrato, contados desde la certificación aprobada o la recepción conforme. Corridas de pago martes y viernes. Pago por transferencia a la cuenta registrada; contratos en USD se pagan al tipo de cambio que fija el contrato.
+- Ajustes de tarifa: los contratos de servicios se actualizan por la fórmula polinómica pactada; los pedidos de ajuste se tramitan con Compras y Contratos.
+- Retenciones: IVA, Ganancias, Ingresos Brutos (Convenio Multilateral cuando corresponde) y regímenes provinciales. Los certificados de retención se emiten con cada orden de pago.
+- Ingreso a yacimiento: para que el personal, vehículos y equipos del proveedor ingresen a locación deben estar vigentes: ART con nómina, póliza de responsabilidad civil, seguro de flota y equipos, inducción HSE del personal, habilitaciones de equipos (izaje, etc.) y revisión técnica de vehículos. Con documentación obligatoria vencida se bloquea el ingreso. Las renovaciones se cargan por este portal y las valida Alta y Documentación de Proveedores.
+- HSE: todo incidente, accidente, casi accidente, derrame o evento ambiental en locación se reporta de inmediato al supervisor de la operadora en el sitio y por la línea de emergencias del yacimiento; luego se registra en este portal para HSE. Los trabajos en locación requieren permiso de trabajo emitido por la operadora.
+- Datos de contacto: se editan desde "Mi perfil". Datos fiscales y bancarios solo se modifican mediante ticket con constancia (nunca por e-mail).
 """
 
 
 def _system_prompt(teams):
     team_lines = "\n".join(f"- `{t['slug']}` — {t['name']}: {t['description']}" for t in teams)
-    return f"""Sos el asistente virtual del Portal de Proveedores de {COMPANY}. Este portal es el canal único de contacto entre los proveedores y la empresa. Respondés en español rioplatense neutro y profesional (tratá de "vos"), cálido y conciso.
+    return f"""Sos el asistente virtual del Portal de Proveedores de {COMPANY}, una operadora de petróleo y gas (upstream) con operaciones en yacimientos convencionales y no convencionales. Este portal es el canal único de contacto entre los contratistas y proveedores de bienes y servicios petroleros y la empresa. Respondés en español rioplatense neutro y profesional (tratá de "vos"), cálido y conciso.
 
 Tu trabajo en cada mensaje:
 1. Entender qué necesita el proveedor (consulta o reclamo) usando el mensaje, el historial y los archivos adjuntos.
@@ -60,7 +62,9 @@ Tu trabajo en cada mensaje:
 3. Si requiere que un equipo interno revise datos, sistemas o tome una acción (estado de un pago puntual, factura rechazada, entrega con problemas, cambio de datos bancarios, etc.), creá un ticket (create_ticket = true) eligiendo el equipo correcto.
 4. Si falta un dato imprescindible para que el equipo pueda actuar (por ej. N° de factura u OC), pedilo de forma específica en una sola pregunta y NO crees el ticket todavía — salvo que el proveedor ya haya insistido o sea un reclamo urgente: en ese caso crealo igual e indicá el dato faltante en el resumen.
 5. Cada conversación indica el contrato al que se refiere (`<contrato_elegido>`). Usá esos datos para responder consultas sobre el contrato (vigencia, monto, condición de pago, responsable) sin abrir ticket. El equipo dueño del contrato es una pista para derivar, pero manda la categoría del pedido (p. ej. una factura rechazada va a Cuentas a Pagar aunque el contrato sea de Compras). Si el contrato está vencido o por vencer y el pedido lo involucra, mencionalo.
-6. Si la conversación YA tiene un ticket abierto, no crees otro (create_ticket = false): el mensaje se suma automáticamente a ese ticket. Confirmá que lo vas a informar al equipo.
+6. Revisá `<documentacion_proveedor>`: si el pedido involucra ingreso a yacimiento, operar en locación o la renovación de un documento, y hay documentos obligatorios vencidos o por vencer, avisalo de forma concreta (cuál, desde cuándo) y explicá que debe cargar la renovación por el portal. Para renovaciones de seguros o habilitaciones, el equipo es `maestro`.
+7. Seguridad primero: si el mensaje describe un incidente, accidente, lesión, derrame, fuga, incendio o evento ambiental, creá el ticket para `hse` con prioridad "urgente", y en la respuesta indicá primero que, si la situación sigue en curso, debe avisar de inmediato al supervisor de la operadora en el sitio y a la línea de emergencias del yacimiento.
+8. Si la conversación YA tiene un ticket abierto, no crees otro (create_ticket = false): el mensaje se suma automáticamente a ese ticket. Confirmá que lo vas a informar al equipo.
 
 Reglas importantes:
 - Nunca inventes estados de pago, fechas, montos ni resultados de gestiones: no tenés acceso a los sistemas internos. Si no lo sabés, derivá.
@@ -71,6 +75,8 @@ Reglas importantes:
 - `reply` admite Markdown simple (negritas, listas). Máximo ~120 palabras.
 - `priority`: "urgente" solo si hay impacto grave inminente (p. ej. corte de suministro, pago vencido hace más de 30 días); "alta" para reclamos con impacto económico; "media" por defecto; "baja" para consultas informativas.
 - `reference`: números de factura, OC, remito u orden de pago mencionados (separados por coma), o "" si no hay.
+- `location`: yacimiento, bloque, locación, pozo o base mencionada (por ejemplo "Bloque Loma Negra Norte, pozo LNN-1042"), o "" si no hay.
+- Usá la terminología del sector: parte diario, HES, certificado de avance, company man, locación, pozo, equipo de pulling/workover, OCTG, mill certificate, permiso de trabajo.
 - `subject`: título corto (máx. 70 caracteres) que describa el caso. `summary`: resumen para el equipo interno, en tercera persona, con todos los datos relevantes (incluido lo que surge de los adjuntos).
 
 Equipos disponibles (campo `team`):
@@ -84,7 +90,7 @@ def _schema(team_slugs):
     return {
         "type": "object",
         "additionalProperties": False,
-        "required": ["reply", "kind", "team", "priority", "create_ticket", "subject", "summary", "reference", "confidence"],
+        "required": ["reply", "kind", "team", "priority", "create_ticket", "subject", "summary", "reference", "location", "confidence"],
         "properties": {
             "reply": {"type": "string", "description": "Respuesta para el proveedor"},
             "kind": {"type": "string", "enum": ["consulta", "reclamo", "ninguno"]},
@@ -94,12 +100,13 @@ def _schema(team_slugs):
             "subject": {"type": "string"},
             "summary": {"type": "string"},
             "reference": {"type": "string"},
+            "location": {"type": "string"},
             "confidence": {"type": "number", "description": "0 a 1: confianza en la clasificación"},
         },
     }
 
 
-def _context_block(provider, history, ticket, contract):
+def _context_block(provider, history, ticket, contract, documents=None):
     lines = [
         "<perfil_proveedor>",
         f"Razón social: {provider['razon_social']} | CUIT: {provider['cuit']} | Condición IVA: {provider['condicion_iva']}",
@@ -113,10 +120,20 @@ def _context_block(provider, history, ticket, contract):
             f"Vigencia: {contract['vigencia']} (días restantes: {contract['days_left']})",
             f"Monto: {contract['monto_fmt']} | Condición de pago: {contract['condicion_pago'] or '-'}",
             f"Responsable interno: {contract['responsable_interno'] or '-'} | Equipo dueño del contrato: {contract['team_name'] or '-'}",
+            f"Yacimiento / área: {contract.get('yacimiento') or '-'}",
             "</contrato_elegido>",
         ]
     else:
         lines.append("<contrato_elegido>El proveedor indicó que la consulta no está relacionada con un contrato.</contrato_elegido>")
+    if documents:
+        lines.append("<documentacion_proveedor>")
+        for d in documents:
+            estado = d["status_label"] + (f" ({abs(d['days_left'])} días {'vencido' if d['days_left'] < 0 else 'restantes'})"
+                                          if d["days_left"] is not None else "")
+            lines.append(f"- {d['nombre']} [{d['categoria']}]: {estado}; vence {d['vence_fmt']}"
+                         + ("; bloquea ingreso a yacimiento si vence" if d["bloquea_ingreso"] else "")
+                         + (f"; {d['detalle']}" if d["detalle"] else ""))
+        lines.append("</documentacion_proveedor>")
     if ticket:
         lines.append(f"<ticket_abierto codigo=\"{ticket['code']}\" equipo=\"{ticket['team_name']}\" estado=\"{ticket['status']}\">{ticket['subject']}</ticket_abierto>")
     else:
@@ -134,12 +151,12 @@ def _context_block(provider, history, ticket, contract):
     return "\n".join(lines)
 
 
-def analyze(provider, teams, history, new_text, new_attachments, ticket=None, contract=None):
+def analyze(provider, teams, history, new_text, new_attachments, ticket=None, contract=None, documents=None):
     """Devuelve dict con reply/kind/team/priority/create_ticket/subject/summary/reference/confidence/engine."""
     if not ai_enabled():
         return _fallback(teams, history, new_text, new_attachments, ticket, contract=contract)
 
-    content = [{"type": "text", "text": _context_block(provider, history, ticket, contract)}]
+    content = [{"type": "text", "text": _context_block(provider, history, ticket, contract, documents)}]
     for a in new_attachments:
         if a["kind"] == "image" and a["size"] <= 5 * 1024 * 1024:
             content.append({"type": "image", "source": {"type": "base64", "media_type": a["mime"],
@@ -174,6 +191,7 @@ def analyze(provider, teams, history, new_text, new_attachments, ticket=None, co
             data["team"] = "general"
         data["confidence"] = max(0.0, min(1.0, float(data.get("confidence") or 0)))
         data["subject"] = (data.get("subject") or "Consulta del proveedor")[:90]
+        data["location"] = (data.get("location") or "")[:150]
         data["engine"] = "claude"
         return data
     except (anthropic.APIStatusError, anthropic.APIConnectionError, json.JSONDecodeError, ValueError) as exc:
@@ -185,13 +203,19 @@ def analyze(provider, teams, history, new_text, new_attachments, ticket=None, co
 # Clasificador local (modo sin IA / contingencia)
 # ---------------------------------------------------------------------------
 _KEYWORDS = {
-    "pagos": ["pago", "pagaron", "cobro", "cobrar", "transferencia", "orden de pago", "cheque", "deuda", "adeud", "vencid"],
-    "facturacion": ["factura", "nota de credito", "nota de debito", "rechaz", "comprobante", "fc "],
-    "compras": ["cotiza", "precio", "licitacion", "presupuesto", "renovacion", "adenda", "condiciones comerciales"],
-    "logistica": ["entrega", "turno", "remito", "descarga", "envio", "flete", "recepcion", "incomplet", "faltan", "faltante"],
-    "calidad": ["devolucion", "calidad", "defect", "no conformidad", "garantia", "roto", "danad"],
-    "impuestos": ["retencion", "percepcion", "certificado", "iibb", "ganancias", "exclusion", "afip", "arca"],
-    "maestro": ["cbu", "datos bancarios", "cambio de cuenta", "alta de proveedor", "domicilio fiscal", "actualizar datos", "razon social"],
+    "pagos": ["pago", "pagaron", "cobro", "cobrar", "transferencia", "orden de pago", "deuda", "adeud", "vencid"],
+    "facturacion": ["factura", "nota de credito", "nota de debito", "comprobante", "fc "],
+    "certificacion": ["parte diario", "partes diarios", "certificado de servicio", "certificacion", "certificado de avance",
+                      "hes", "hoja de entrada", "acta de medicion", "company man"],
+    "compras": ["cotiza", "precio", "licitacion", "presupuesto", "renovacion", "adenda", "polinomica", "ajuste de tarifa", "tarifa"],
+    "logistica": ["entrega", "turno", "remito", "descarga", "envio", "flete", "almacen", "base operativa", "faltan", "faltante", "incomplet"],
+    "calidad": ["mill cert", "certificado de calidad", "colada", "inspeccion", "no conformidad", "devolucion", "defect",
+                "rosca", "api 5ct", "retenido", "retuvieron"],
+    "hse": ["incidente", "accidente", "casi accidente", "derrame", "fuga", "incendio", "lesion", "herido", "ambiental",
+            "permiso de trabajo", "induccion", "seguridad", "evacu"],
+    "impuestos": ["retencion", "percepcion", "iibb", "ingresos brutos", "ganancias", "exclusion", "convenio multilateral"],
+    "maestro": ["cbu", "datos bancarios", "alta de proveedor", "domicilio fiscal", "razon social", "poliza", "seguro", "art ",
+                "documentacion", "habilitacion", "rto", "vtv", "ingreso a yacimiento", "renovacion de la poliza"],
 }
 _CLAIM = ["reclamo", "reclam", "no me pagaron", "rechaz", "problema", "error", "demora", "atras", "urgente", "queja",
           "incomplet", "faltan", "nunca", "todavia no", "aun no"]
@@ -202,7 +226,7 @@ def _norm(s):
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
-def _fallback(teams, history, text, attachments, ticket, force_ticket=False, contract=None):
+def _fallback(teams, history, text, attachments, ticket, force_ticket=False, contract=None, documents=None):
     own = _norm(" " + (text or "") + " ")
     blob = _norm(" " + text + " " + " ".join((a.get("extracted_text") or "")[:2000] for a in attachments))
     # Lo que escribe el proveedor pesa más que el contenido de los adjuntos
@@ -211,12 +235,28 @@ def _fallback(teams, history, text, attachments, ticket, force_ticket=False, con
         scores["pagos"] += 10  # la intención principal es el cobro aunque se mencione la factura
     if "rechaz" in own and "factura" in own:
         scores["facturacion"] += 10
+    if "rechaz" in own and ("certificado" in own or "parte" in own) and "calidad" not in own:
+        scores["certificacion"] += 10
+    if re.search(r"poliza|seguro|\bart\b|habilitacion|documentacion|induccion|\brto\b|\bvtv\b", own) and "incidente" not in own:
+        scores["maestro"] += 10  # renovaciones de documentación: Alta y Documentación de Proveedores
+    hse_event = re.search(r"incidente|accidente|derrame|fuga|incendio|lesion|herid|evento ambiental", own)
+    if hse_event:
+        scores["hse"] += 50  # seguridad primero
     team = max(scores, key=scores.get) if any(scores.values()) else "general"
     if team == "general" and contract and contract.get("team_slug"):
         team = contract["team_slug"]  # pista: equipo dueño del contrato
-    is_claim = any(k in blob for k in _CLAIM)
-    urgent = "urgente" in blob
-    refs = re.findall(r"\b(?:fc|factura|oc|op|remito)\s*[a-z]?\s*[\d\-]{4,}", blob)
+    is_claim = any(k in blob for k in _CLAIM) or bool(hse_event)
+    urgent = "urgente" in blob or bool(hse_event)
+    refs = re.findall(r"\b(?:fc|factura|oc|op|remito|hes|pozo)\s*[a-z]?\s*[a-z]{0,4}[\d\-]{3,}", blob)
+    loc_match = re.search(r"\b(pozo\s+[a-z]{2,5}[\s\-]?\d{2,5}|bloque\s+[a-z][a-z ]{2,30}|base\s+(?:operativa\s+)?[a-z]{3,20}|locacion\s+[a-z0-9\- ]{2,25})",
+                          own)
+    if loc_match:
+        raw = " " + (text or "") + " "
+        span = raw[loc_match.start():loc_match.end()] if len(raw) == len(own) else loc_match.group(0)
+        location = span.strip()[:1].upper() + span.strip()[1:]
+    else:
+        location = (contract.get("yacimiento") if contract else "") or ""
+    expired = [d for d in (documents or []) if d["status"] == "vencido" and d["bloquea_ingreso"]]
     greeting_only = len(_norm(text).split()) <= 3 and not attachments and not any(scores.values())
     team_name = next(t["name"] for t in teams if t["slug"] == team)
 
@@ -224,11 +264,18 @@ def _fallback(teams, history, text, attachments, ticket, force_ticket=False, con
         reply = "Recibido. Sumé tu mensaje al ticket y avisé al equipo para que lo revise."
         create = False
     elif greeting_only:
-        reply = ("¡Hola! Soy el asistente del portal. Contame tu consulta o reclamo —por ejemplo, el estado de un pago, "
-                 "una factura rechazada o una entrega— y si querés adjuntá la documentación.")
+        reply = ("¡Hola! Soy el asistente del portal. Contame tu consulta o reclamo (por ejemplo, el estado de un pago, "
+                 "un certificado de servicios rechazado, una entrega en base o un incidente en locación) y adjuntá la documentación si la tenés.")
         create = False
     else:
-        reply = f"Entendido. Registré tu {'reclamo' if is_claim else 'consulta'} y lo derivé a **{team_name}** para que lo revisen."
+        reply = ""
+        if hse_event:
+            reply = ("**Si la situación sigue en curso, avisá de inmediato al supervisor de la operadora en el sitio y a la "
+                     "línea de emergencias del yacimiento.**\n\n")
+        reply += f"Registré tu {'reclamo' if is_claim else 'consulta'} y lo derivé a **{team_name}** para que lo revisen."
+        if expired and re.search(r"ingres|locacion|yacimiento|equipo|personal|operar|poliza|seguro|habilita", own):
+            reply += ("\n\nAtención: tenés documentación obligatoria vencida que bloquea el ingreso a yacimiento: "
+                      + ", ".join(d["nombre"] for d in expired) + ". Podés cargar la renovación desde **Mi documentación**.")
         create = True
     first_line = (text or (attachments[0]["original_name"] if attachments else "Consulta")).strip().split("\n")[0]
     first_line = re.sub(r"^(hola|buen(os|as) (dias|días|tardes|noches))[,!.\s]*", "", first_line, flags=re.I).strip()
@@ -242,6 +289,7 @@ def _fallback(teams, history, text, attachments, ticket, force_ticket=False, con
         "subject": first_line[:70] or "Consulta del proveedor",
         "summary": (text or "").strip()[:1500] + (f"\nAdjuntos: {', '.join(a['original_name'] for a in attachments)}" if attachments else ""),
         "reference": ", ".join(sorted(set(r.upper() for r in refs)))[:200],
+        "location": location[:150],
         "confidence": 0.55 if any(scores.values()) else 0.3,
         "engine": "local",
     }
