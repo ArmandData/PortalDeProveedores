@@ -241,7 +241,9 @@ def match_case_type(case_types, team_id, text):
     blob = _norm(" " + (text or "") + " ")
 
     def score(c):
-        return sum(blob.count(_norm(k.strip())) for k in (c.get("keywords") or "").split(",") if k.strip())
+        # Coincide desde el inicio de una palabra: «art» cuenta en «ART», no en «parte»; «impag» cuenta en «impaga».
+        return sum(len(re.findall(r"\b" + re.escape(_norm(k.strip())), blob))
+                   for k in (c.get("keywords") or "").split(",") if k.strip())
 
     best = max(own, key=score)
     return best if score(best) > 0 else own[0]

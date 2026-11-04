@@ -1139,7 +1139,8 @@ def staff_inbox():
 
 def staff_ticket(code):
     t = db.query("""SELECT t.*, tm.name AS team_name, tm.color AS team_color, tm.sla_hours, u.full_name AS assignee_name,
-                    ct.name AS case_type_name, ct.response_hours, ct.resolution_hours,
+                    ct.name AS case_type_name,
+                    CAST(ROUND((julianday(t.sla_due) - julianday(t.created_at)) * 24) AS INTEGER) AS sla_total_hours,
                     (SELECT MIN(m.created_at) FROM messages m WHERE m.conversation_id=t.conversation_id
                      AND m.role='agent' AND m.internal=0) AS first_response_at
                     FROM tickets t JOIN teams tm ON tm.id=t.team_id LEFT JOIN users u ON u.id=t.assignee_id
