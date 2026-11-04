@@ -295,15 +295,13 @@
           <dt>Tipo</dt><dd>${ticket.kind === "reclamo" ? "Reclamo" : "Consulta"}</dd>
           <dt>Equipo</dt><dd><span class="team-tag"><span class="dot" style="background:${esc(ticket.team_color)}"></span>${esc(ticket.team)}</span></dd>
           <dt>Prioridad</dt><dd><span class="prio prio-${esc(ticket.priority)}"><span class="bars"><i></i><i></i><i></i></span>${esc(ticket.priority_label)}</span></dd>
-          <dt>Plazo</dt><dd><span class="sla sla-${esc(ticket.sla_state)}">${esc(ticket.sla_label)}</span></dd>
           ${ticket.reference ? `<dt>Referencia</dt><dd class="mono">${esc(ticket.reference)}</dd>` : ""}
           ${ticket.location ? `<dt>Locación</dt><dd>${esc(ticket.location)}</dd>` : ""}
           <dt>Creado</dt><dd>${esc(ticket.created_at)}</dd></dl></section>
         ${contractBlock(c)}`;
       els.caseStrip.innerHTML = `${icon("ticket", "icon-sm")}<span class="mono">${esc(ticket.code)}</span>
         <span class="badge badge-${esc(ticket.status)}">${esc(ticket.status_label)}</span>
-        <span class="team-tag"><span class="dot" style="background:${esc(ticket.team_color)}"></span>${esc(ticket.team)}</span>
-        <span class="sla sla-${esc(ticket.sla_state)}">${esc(ticket.sla_label)}</span>`;
+        <span class="team-tag"><span class="dot" style="background:${esc(ticket.team_color)}"></span>${esc(ticket.team)}</span>`;
       els.caseStrip.hidden = false;
       els.meta.innerHTML = "";
     } else {

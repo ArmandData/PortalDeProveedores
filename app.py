@@ -352,13 +352,17 @@ def ticket_for_conversation(conv_id):
 def serialize_ticket(t):
     if not t:
         return None
-    state, label = sla_state(t)
+    # El plazo (SLA) es interno: no se envía al proveedor.
     return dict(code=t["code"], subject=t["subject"], status=t["status"], status_label=STATUS_LABELS[t["status"]],
                 priority=t["priority"], priority_label=PRIORITY_LABELS[t["priority"]], kind=t["kind"],
-                team=t["team_name"], team_color=t["team_color"], sla_state=state, sla_label=label,
+                team=t["team_name"], team_color=t["team_color"],
                 reference=t["reference"] or "", created_at=fmt_fecha(t["created_at"]),
                 contract=t["contract_numero"] or "", location=t["location"] or "",
                 assignee=t["assignee_name"] or "Sin asignar", summary=t["summary"])
+
+
+# Mensajes de tickets creados antes de ocultar el plazo al proveedor.
+_SLA_LINE = re.compile(r"^- Plazo de respuesta:.*\n?", re.M)
 
 
 def serialize_messages(conv_id, include_internal=False, after_id=0):
@@ -377,7 +381,8 @@ def serialize_messages(conv_id, include_internal=False, after_id=0):
             id=a["id"], name=a["original_name"], size=extract.human_size(a["size"]),
             ext=extract.extension(a["original_name"]), url=url_for("download", att_id=a["id"]),
             is_image=a["mime"].startswith("image/")))
-    return [dict(id=r["id"], role=r["role"], body=r["body"], internal=bool(r["internal"]),
+    return [dict(id=r["id"], role=r["role"],
+                 body=_SLA_LINE.sub("", r["body"]) if r["role"] == "assistant" else r["body"], internal=bool(r["internal"]),
                  author=r["author_name"], team=r["author_team"], time=fmt_fecha(r["created_at"]),
                  iso=r["created_at"], attachments=by_msg.get(r["id"], [])) for r in rows]
 
@@ -580,8 +585,7 @@ def api_send(conv_id):
                   f"- Equipo asignado: {team['name']}\n"
                   + (f"- Contrato: {contract['numero']}\n" if contract else "")
                   + (f"- Locación: {location}\n" if location else "")
-                  + f"- Plazo de respuesta: hasta {team['sla_hours']} h\n"
-                  f"Te avisamos en esta conversación cuando el equipo responda.")
+                  + f"Te avisamos en esta conversación cuando el equipo responda.")
         ticket = ticket_for_conversation(conv_id)
 
     db.execute("INSERT INTO messages (conversation_id, role, body, created_at) VALUES (?,?,?,?)",

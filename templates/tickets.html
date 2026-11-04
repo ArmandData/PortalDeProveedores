@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, status_badge, priority, team_tag, sla %}
+{% from "_macros.html" import icon, status_badge, priority, team_tag %}
 {% block title %}Mis tickets{% endblock %}
 {% block main %}
 <div class="page">
@@ -46,7 +46,7 @@
                 {% if t.reference %}<span>· {{ t.reference }}</span>{% endif %}
                 {% if t.location %}<span>· {{ t.location }}</span>{% endif %}</span>
             </td>
-            <td>{{ status_badge(t.status) }}<div style="margin-top:4px">{{ sla(t) }}</div></td>
+            <td>{{ status_badge(t.status) }}</td>
             <td class="hide-sm">{{ team_tag(t.team_name, t.team_color) }}</td>
             <td class="hide-sm">{{ priority(t.priority) }}</td>
             <td class="hide-sm nowrap muted">{{ t.updated_at | relativa }}</td>
