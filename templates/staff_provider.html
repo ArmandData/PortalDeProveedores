@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% from "_scoring.html" import standing_badge, score_badge %}
+{% block title %}{{ p.razon_social }} · Scoring{% endblock %}
+{% block main %}
+<div class="page" style="max-width:1320px">
+  <div class="breadcrumb"><a href="{{ url_for('staff_providers') }}">Proveedores y scoring</a>{{ icon('chevron', 'icon-sm') }}<span>{{ p.razon_social }}</span></div>
+  <div class="page-head">
+    <div style="display:flex;gap:14px;align-items:center">{{ avatar(p, 'avatar-lg') }}
+      <div><h1>{{ p.razon_social }}</h1>
+        <p><span class="mono">CUIT {{ p.cuit }}</span> · {{ p.rubro or '—' }} · {{ contracts }} contrato{{ 's' if contracts != 1 }} vigente{{ 's' if contracts != 1 }}</p></div>
+    </div>
+  </div>
+
+  {# Estado para operar: lo más importante, arriba #}
+  <section class="standing-banner standing-banner-{{ st.status }}" aria-labelledby="st-title">
+    <div class="standing-main">
+      {{ icon({'habilitado': 'check-circle', 'restringido': 'alert', 'bloqueado': 'lock'}[st.status], 'icon-lg') }}
+      <div>
+        <h2 id="st-title">{{ st.status_label }}</h2>
+        {% if st.status == 'habilitado' %}<p>No tiene bloqueos activos para seguir operando en la empresa.</p>
+        {% else %}
+          <ul>
+            {% for b in st.blocks %}<li><strong>{{ b.label }}</strong>: {{ b.effect }}</li>{% endfor %}
+            {% for b in st.auto_blocks %}<li><strong>{{ b.label }}</strong>: {{ b.effect }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+    <div class="standing-score">
+      <span class="kpi-label">Score actual</span>
+      {{ score_badge(st.last, st.trend) }}
+      {% if st.last %}<span class="kpi-sub">{{ st.last.period }} · {{ st.last.created_at | fecha(False) }}</span>{% endif %}
+    </div>
+  </section>
+
+  <div class="detail-grid provider-grid">
+    <div class="stack">
+      <section class="card">
+        <div class="card-head"><div><h2>Score por criterio</h2><p>{% if st.last %}Evaluación «{{ st.last.period }}»{% else %}Todavía no tiene evaluaciones.{% endif %}</p></div></div>
+        {% if st.last %}
+        <div class="card-body">
+          <ul class="criteria">
+            {% for key, label, weight in SCORING_CRITERIA %}
+              {% set v = st.last[key] %}
+              <li><div class="crit-head"><span>{{ label }} <small class="muted">({{ weight }}%)</small></span><strong>{{ v }}/5</strong></div>
+                <div class="crit-bar crit-{{ v }}" role="img" aria-label="{{ label }}: {{ v }} de 5"><i style="width: {{ v * 20 }}%"></i></div></li>
+            {% endfor %}
+          </ul>
+          {% if st.last.comment %}<p class="muted" style="margin-top:12px">«{{ st.last.comment }}»</p>{% endif %}
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="card" id="evaluar">
+        <div class="card-head"><div><h2>Nueva evaluación</h2><p>Calificá cada criterio de 1 (muy malo) a 5 (excelente). El score se calcula solo.</p></div></div>
+        <form class="card-body" method="post" action="{{ url_for('staff_provider_evaluate', pid=p.id) }}" novalidate>
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <div class="field">
+            <label for="ev-period">Período evaluado <span aria-hidden="true" style="color:var(--danger)">*</span></label>
+            <input class="input" id="ev-period" name="period" maxlength="60" value="{{ values.period }}" placeholder="Ej.: Cuarto trimestre 2026" required
+                   {% if errors.period %}aria-invalid="true" aria-describedby="e-period"{% endif %}>
+            {% if errors.period %}<span class="error-text" id="e-period">{{ icon('alert', 'icon-sm') }}{{ errors.period }}</span>{% endif %}
+          </div>
+          {% for key, label, weight in SCORING_CRITERIA %}
+          <fieldset class="rating" {% if errors[key] %}aria-invalid="true" aria-describedby="e-{{ key }}"{% endif %}>
+            <legend>{{ label }} <small class="muted">· peso {{ weight }}%</small>
+              {% if key == 'documentacion' %}<span class="hint">Sugerido {{ doc_suggestion }} según la documentación actual{% if docs_summary.bloqueantes %} ({{ docs_summary.bloqueantes }} bloqueante{{ 's' if docs_summary.bloqueantes > 1 }}){% endif %}.</span>{% endif %}</legend>
+            <div class="rating-opts">
+              {% for n in range(1, 6) %}
+                <label><input type="radio" name="{{ key }}" value="{{ n }}" {% if values[key] == n %}checked{% endif %} required><span>{{ n }}</span></label>
+              {% endfor %}
+            </div>
+            {% if errors[key] %}<span class="error-text" id="e-{{ key }}">{{ icon('alert', 'icon-sm') }}{{ errors[key] }}</span>{% endif %}
+          </fieldset>
+          {% endfor %}
+          <div class="field">
+            <label for="ev-comment">Comentario</label>
+            <textarea class="textarea" id="ev-comment" name="comment" maxlength="1000" style="min-height:72px" placeholder="Fundamento de la evaluación, desvíos, compromisos de mejora">{{ values.comment }}</textarea>
+          </div>
+          <div class="form-actions"><button class="btn btn-primary" type="submit" data-loading-text="Guardando…">Registrar evaluación</button></div>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h2>Historial de evaluaciones</h2></div></div>
+        <div class="table-wrap">
+          <table class="table table-compact">
+            <caption class="sr-only">Evaluaciones anteriores</caption>
+            <thead><tr><th scope="col">Período</th><th scope="col">Score</th>
+              {% for key, label, w in SCORING_CRITERIA %}<th scope="col" class="num hide-sm" title="{{ label }}">{{ {'calidad': 'Cal.', 'cumplimiento': 'Cump.', 'hse': 'HSE', 'documentacion': 'Doc.'}[key] }}</th>{% endfor %}
+</tr></thead>
+            <tbody>
+              {% for e in evaluations %}
+              <tr style="cursor:default">
+                <td class="eval-period"><strong>{{ e.period }}</strong><span class="sub">{{ e.created_at | fecha(False) }} · {{ e.created_by_name or 'Datos de ejemplo' }}</span>
+                  {% if e.comment %}<span class="sub" title="{{ e.comment }}">{{ e.comment | truncate(90, True, '…') }}</span>{% endif %}</td>
+                <td class="nowrap">{{ score_badge(e) }}</td>
+                {% for key, label, w in SCORING_CRITERIA %}<td class="num hide-sm">{{ e[key] }}</td>{% endfor %}
+              </tr>
+              {% else %}
+              <tr style="cursor:default"><td colspan="6" class="muted">Sin evaluaciones registradas.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <aside class="stack">
+      <section class="card" id="bloqueos">
+        <div class="card-head"><div><h2>Bloqueos</h2><p>Definen si puede seguir operando en la empresa.</p></div>{{ icon('lock', 'muted') }}</div>
+        <div class="card-body">
+          {% for b in st.blocks %}
+            <div class="block-item">
+              <div class="block-title">{{ icon('lock', 'icon-sm') }}<strong>{{ b.label }}</strong></div>
+              <p>{{ b.reason }}</p>
+              <p class="muted" style="font-size:12.5px">Desde {{ b.created_at | fecha(False) }} · {{ b.created_by_name or 'Datos de ejemplo' }}</p>
+              <details class="lift">
+                <summary class="btn btn-ghost btn-sm">Levantar bloqueo</summary>
+                <form method="post" action="{{ url_for('staff_provider_unblock', pid=p.id, bid=b.id) }}">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                  <label class="sr-only" for="lift-{{ b.id }}">Motivo para levantar el bloqueo</label>
+                  <textarea class="textarea" id="lift-{{ b.id }}" name="lift_reason" maxlength="1000" required style="min-height:64px" placeholder="Por qué se levanta (ej.: presentó el informe de causa raíz)"></textarea>
+                  <button class="btn btn-secondary btn-sm" type="submit">Confirmar</button>
+                </form>
+              </details>
+            </div>
+          {% endfor %}
+          {% for b in st.auto_blocks %}
+            <div class="block-item block-auto">
+              <div class="block-title">{{ icon('shield', 'icon-sm') }}<strong>{{ b.label }}</strong></div>
+              <p>{{ b.effect }}</p>
+              <p class="muted" style="font-size:12.5px">Automático: depende de la documentación del proveedor.</p>
+            </div>
+          {% endfor %}
+          {% if not st.blocks and not st.auto_blocks %}<p class="muted" style="margin-bottom:12px">Sin bloqueos activos.</p>{% endif %}
+
+          <form class="block-form" method="post" action="{{ url_for('staff_provider_block', pid=p.id) }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <h3>Registrar bloqueo</h3>
+            <div class="field">
+              <label for="bk-kind">Tipo</label>
+              <select class="select" id="bk-kind" name="kind" required>
+                {% for k, (label, effect) in BLOCK_KINDS.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+              </select>
+              <span class="hint">Suspensión total: no puede operar. Los otros dos restringen la operación.</span>
+            </div>
+            <div class="field">
+              <label for="bk-reason">Motivo</label>
+              <textarea class="textarea" id="bk-reason" name="reason" maxlength="1000" required style="min-height:72px" placeholder="Qué pasó y qué tiene que presentar para levantarlo"></textarea>
+            </div>
+            <button class="btn btn-danger-ghost btn-block" type="submit" data-confirm="¿Registrar el bloqueo? El proveedor verá un aviso en el portal.">Registrar bloqueo</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h2>Señales del portal</h2><p>Últimos 180 días, para fundamentar la evaluación.</p></div></div>
+        <div class="card-body"><dl class="dl">
+          <dt>Tickets</dt><dd>{{ signals.tickets or 0 }} ({{ signals.reclamos or 0 }} reclamos)</dd>
+          <dt>Eventos HSE</dt><dd>{% if signals.hse %}<span class="t-danger">{{ signals.hse }}</span>{% else %}0{% endif %}</dd>
+          <dt>Calidad (QA/QC)</dt><dd>{{ signals.calidad or 0 }}</dd>
+          <dt>Reclamos de logística</dt><dd>{{ signals.logistica or 0 }}</dd>
+          <dt>Documentación</dt><dd>{% if docs_summary.bloqueantes %}<span class="t-danger">{{ docs_summary.bloqueantes }} vencido{{ 's' if docs_summary.bloqueantes > 1 }} que bloquea{{ 'n' if docs_summary.bloqueantes > 1 }} ingreso</span>{% elif docs_summary.vencido %}{{ docs_summary.vencido }} vencido{{ 's' if docs_summary.vencido > 1 }}{% elif docs_summary.por_vencer %}{{ docs_summary.por_vencer }} por vencer{% else %}Al día{% endif %}</dd>
+        </dl>
+        <a class="btn btn-ghost btn-sm" style="margin-top:10px" href="{{ url_for('staff_analytics', proveedor=p.id) }}">{{ icon('chart', 'icon-sm') }}Ver en Analítica</a></div>
+      </section>
+
+      {% if history %}
+      <section class="card">
+        <div class="card-head"><h2>Bloqueos anteriores</h2></div>
+        <div class="card-body"><ul class="events">
+          {% for b in history %}<li><span><strong>{{ b.label }}</strong> · {{ b.reason }}<br><span class="muted">Levantado: {{ b.lift_reason }}</span></span>
+            <time>{{ b.created_at | fecha(False) }} → {{ b.lifted_at | fecha(False) }}{% if b.lifted_by_name %} · {{ b.lifted_by_name }}{% endif %}</time></li>{% endfor %}
+        </ul></div>
+      </section>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

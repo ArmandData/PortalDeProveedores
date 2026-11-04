@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% from "_scoring.html" import standing_badge, score_badge %}
+{% block title %}Proveedores y scoring{% endblock %}
+{% block main %}
+<div class="page" style="max-width:1320px">
+  <div class="page-head">
+    <div>
+      <h1>Proveedores y scoring</h1>
+      <p>Evaluación de desempeño y habilitación para operar. A cargo de Proveedores y Performance y del administrador.</p>
+    </div>
+  </div>
+
+  <div class="kpi-grid" style="grid-template-columns:repeat(4, minmax(0, 1fr))">
+    <div class="kpi"><span class="kpi-label">Score promedio</span><strong class="kpi-value">{{ kpis.avg if kpis.avg is not none else '—' }}</strong>
+      <span class="kpi-sub">de {{ kpis.total }} proveedor{{ 'es' if kpis.total != 1 }}, última evaluación</span></div>
+    <div class="kpi"><span class="kpi-label">Habilitados</span><strong class="kpi-value t-ok">{{ kpis.habilitado }}</strong>
+      <span class="kpi-sub">Sin bloqueos activos</span></div>
+    <div class="kpi"><span class="kpi-label">Operación restringida</span><strong class="kpi-value t-warn">{{ kpis.restringido }}</strong>
+      <span class="kpi-sub">Bloqueo parcial o documentación vencida</span></div>
+    <div class="kpi"><span class="kpi-label">Bloqueados</span><strong class="kpi-value t-danger">{{ kpis.bloqueado }}</strong>
+      <span class="kpi-sub">Suspensión total: no pueden operar</span></div>
+  </div>
+
+  <section class="card">
+    <div class="table-wrap">
+      <table class="table providers-table">
+        <caption class="sr-only">Proveedores con su score y estado para operar</caption>
+        <thead><tr>
+          <th scope="col">Proveedor</th>
+          <th scope="col">Score</th>
+          <th scope="col">Estado para operar</th>
+          <th scope="col" class="hide-sm">Última evaluación</th>
+          <th scope="col" class="num hide-md" title="Tickets abiertos">Abiertos</th>
+        </tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr data-href="{{ url_for('staff_provider_detail', pid=r.p.id) }}">
+            <td>
+              <div style="display:flex;gap:10px;align-items:center">{{ avatar(r.p) }}
+                <div><a class="subject" href="{{ url_for('staff_provider_detail', pid=r.p.id) }}">{{ r.p.razon_social }}</a>
+                  <span class="sub mono">{{ r.p.cuit }}</span><span class="sub">{{ r.p.rubro or '—' }}</span></div></div>
+            </td>
+            <td class="nowrap" data-label="Score">{{ score_badge(r.st.last, r.st.trend) }}</td>
+            <td data-label="Estado">{{ standing_badge(r.st) }}
+              {% set n = r.st.blocks | length + r.st.auto_blocks | length %}
+              {% if n %}<span class="sub">{{ (r.st.blocks + r.st.auto_blocks) | map(attribute='label') | join(' · ') }}</span>{% endif %}</td>
+            <td class="hide-sm nowrap">{% if r.st.last %}{{ r.st.last.period }}<span class="sub">{{ r.st.last.created_at | fecha(False) }}</span>{% else %}<span class="muted">Sin evaluar</span>{% endif %}</td>
+            <td class="num hide-md">{{ r.open_tickets }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <p class="muted" style="font-size:13px;margin-top:12px">
+    <strong>Score:</strong> 0 a 100, ponderado entre calidad (30%), cumplimiento (25%), HSE (25%) y documentación (20%).
+    Categorías: A preferente (85+), B aprobado (70–84), C en observación (50–69), D no apto (menos de 50).
+    El proveedor no ve su score.
+  </p>
+</div>
+{% endblock %}

@@ -291,6 +291,8 @@ def inject_nav():
         ctx["nav_open"] = db.query(
             f"SELECT COUNT(*) AS n FROM tickets WHERE provider_id=? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
             (g.user["provider_id"], *OPEN_STATUSES), one=True)["n"]
+        ctx["nav_blocks"] = [BLOCK_KINDS[b["kind"]][0] for b in db.query(
+            "SELECT kind FROM provider_blocks WHERE provider_id=? AND lifted_at IS NULL ORDER BY kind DESC", (g.user["provider_id"],))]
         _, docs_summary = provider_documents(g.user["provider_id"])
         ctx["nav_docs_alert"] = docs_summary["vencido"] + docs_summary["por_vencer"]
         ctx["nav_docs_summary"] = docs_summary
@@ -647,7 +649,9 @@ def api_send(conv_id):
     case_types = active_case_types()
     documents, _ = provider_documents(provider["id"])
     result = ai.analyze(provider, teams, history, text, files, ticket=dict(ticket) if ticket else None,
-                        contract=contract, documents=documents, case_types=case_types)
+                        contract=contract, documents=documents, case_types=case_types,
+                        blocks=[BLOCK_KINDS[b["kind"]][0] for b in db.query(
+                            "SELECT kind FROM provider_blocks WHERE provider_id=? AND lifted_at IS NULL", (provider["id"],))])
     location = (result.get("location") or "").strip() or (contract["yacimiento"] if contract and contract.get("yacimiento") else "")
     reply = result["reply"].strip()
     warned = (conv["dup_warned"] or "").split(",") if conv["dup_warned"] else []
@@ -1164,8 +1168,9 @@ def staff_ticket_detail(code):
     teams = db.query("SELECT * FROM teams ORDER BY id")
     contract = own_contract(t["contract_id"], t["provider_id"]) if t["contract_id"] else None
     docs, docs_summary = provider_documents(t["provider_id"])
+    standing = provider_standing(t["provider_id"], docs_summary)
     return render_template("staff_ticket.html", t=t, p=provider, messages=messages, events=events, agents=agents,
-                           teams=teams, contract=contract, docs=docs, docs_summary=docs_summary,
+                           teams=teams, contract=contract, docs=docs, docs_summary=docs_summary, standing=standing,
                            accept=",".join("." + e for e in extract.ALLOWED))
 
 
@@ -1343,6 +1348,187 @@ def case_type_edit(type_id):
     used = db.query("SELECT COUNT(*) AS n FROM tickets WHERE case_type_id=?", (type_id,), one=True)["n"]
     return render_template("case_type_form.html", c=values, errors=errors, is_new=False, used=used,
                            teams=db.query("SELECT * FROM teams ORDER BY id"))
+
+
+# ---------------------------------------------------------------------------
+# Scoring y habilitación de proveedores: a cargo de Proveedores y Performance y del administrador.
+# ---------------------------------------------------------------------------
+BLOCK_KINDS = {
+    "suspension": ("Suspensión total", "No puede operar ni recibir órdenes nuevas."),
+    "ingreso": ("Bloqueo de ingreso a yacimiento", "Personal, vehículos y equipos no pueden ingresar a locación."),
+    "adjudicaciones": ("Sin nuevas adjudicaciones", "Puede completar los contratos vigentes, pero no recibir nuevos."),
+}
+CATEGORY_LABELS = {"A": "Preferente", "B": "Aprobado", "C": "En observación", "D": "No apto"}
+STANDING_LABELS = {"habilitado": "Habilitado para operar", "restringido": "Operación restringida", "bloqueado": "Bloqueado: no puede operar"}
+PERFORMANCE_SLUG = db.PERFORMANCE_TEAM[0]
+
+
+def can_manage_providers():
+    if not g.get("user"):
+        return False
+    if g.user["role"] == "admin":
+        return True
+    team = db.query("SELECT slug FROM teams WHERE id=?", (g.user["team_id"],), one=True) if g.user["team_id"] else None
+    return g.user["role"] == "agent" and team is not None and team["slug"] == PERFORMANCE_SLUG
+
+
+def manage_providers_required(fn):
+    @functools.wraps(fn)
+    @login_required("agent", "admin")
+    def wrapper(*a, **kw):
+        if not can_manage_providers():
+            abort(403)
+        return fn(*a, **kw)
+    return wrapper
+
+
+def doc_score_suggestion(docs_summary):
+    """Calificación sugerida (1-5) del criterio documentación según el estado de los documentos."""
+    if docs_summary["bloqueantes"]:
+        return 1
+    if docs_summary["vencido"]:
+        return 2
+    if docs_summary["por_vencer"]:
+        return 4
+    return 5
+
+
+def provider_standing(provider_id, docs_summary=None):
+    """Estado para operar: bloqueos activos (manuales y automáticos por documentación) y último scoring."""
+    if docs_summary is None:
+        _, docs_summary = provider_documents(provider_id)
+    blocks = [dict(b, label=BLOCK_KINDS[b["kind"]][0], effect=BLOCK_KINDS[b["kind"]][1]) for b in db.query(
+        """SELECT b.*, u.full_name AS created_by_name FROM provider_blocks b LEFT JOIN users u ON u.id=b.created_by
+           WHERE b.provider_id=? AND b.lifted_at IS NULL ORDER BY b.created_at DESC""", (provider_id,))]
+    auto = []
+    if docs_summary["bloqueantes"]:
+        auto.append(dict(label="Ingreso a yacimiento bloqueado por documentación vencida",
+                         effect=f"{docs_summary['bloqueantes']} documento{'s' if docs_summary['bloqueantes'] > 1 else ''} obligatorio"
+                                f"{'s' if docs_summary['bloqueantes'] > 1 else ''} vencido{'s' if docs_summary['bloqueantes'] > 1 else ''}. "
+                                "Se levanta solo cuando se valida la renovación."))
+    evals = db.query("SELECT * FROM provider_evaluations WHERE provider_id=? ORDER BY created_at DESC, id DESC LIMIT 2", (provider_id,))
+    last, prev = (evals[0] if evals else None), (evals[1] if len(evals) > 1 else None)
+    if any(b["kind"] == "suspension" for b in blocks):
+        status = "bloqueado"
+    elif blocks or auto:
+        status = "restringido"
+    else:
+        status = "habilitado"
+    return dict(status=status, status_label=STANDING_LABELS[status], blocks=blocks, auto_blocks=auto, last=last,
+                trend=(last["score"] - prev["score"]) if last and prev else None)
+
+
+app.jinja_env.globals.update(BLOCK_KINDS=BLOCK_KINDS, CATEGORY_LABELS=CATEGORY_LABELS, SCORING_CRITERIA=db.SCORING_CRITERIA,
+                             can_manage_providers=can_manage_providers)
+
+
+@app.route("/equipo/proveedores")
+@manage_providers_required
+def staff_providers():
+    rows = []
+    for p in db.query("SELECT * FROM providers ORDER BY razon_social"):
+        st = provider_standing(p["id"])
+        rows.append(dict(p=p, st=st, open_tickets=db.query(
+            f"SELECT COUNT(*) AS n FROM tickets WHERE provider_id=? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
+            (p["id"], *OPEN_STATUSES), one=True)["n"]))
+    order = {"bloqueado": 0, "restringido": 1, "habilitado": 2}
+    rows.sort(key=lambda r: (order[r["st"]["status"]], r["st"]["last"]["score"] if r["st"]["last"] else -1))
+    scored = [r["st"]["last"]["score"] for r in rows if r["st"]["last"]]
+    kpis = dict(total=len(rows), avg=round(sum(scored) / len(scored)) if scored else None,
+                **{k: sum(1 for r in rows if r["st"]["status"] == k) for k in STANDING_LABELS})
+    return render_template("staff_providers.html", rows=rows, kpis=kpis)
+
+
+@app.route("/equipo/proveedores/<int:pid>")
+@manage_providers_required
+def staff_provider_detail(pid, form_errors=None, form_values=None):
+    p = db.query("SELECT * FROM providers WHERE id=?", (pid,), one=True)
+    if not p:
+        abort(404)
+    docs, docs_summary = provider_documents(pid)
+    st = provider_standing(pid, docs_summary)
+    evaluations = db.query("""SELECT e.*, u.full_name AS created_by_name FROM provider_evaluations e
+                              LEFT JOIN users u ON u.id=e.created_by WHERE e.provider_id=? ORDER BY e.created_at DESC, e.id DESC""", (pid,))
+    history = [dict(b, label=BLOCK_KINDS[b["kind"]][0]) for b in db.query(
+        """SELECT b.*, u.full_name AS created_by_name, l.full_name AS lifted_by_name FROM provider_blocks b
+           LEFT JOIN users u ON u.id=b.created_by LEFT JOIN users l ON l.id=b.lifted_by
+           WHERE b.provider_id=? AND b.lifted_at IS NOT NULL ORDER BY b.lifted_at DESC""", (pid,))]
+    since = (datetime.now() - timedelta(days=180)).isoformat(sep=" ")
+    signals = db.query("""SELECT COUNT(*) AS tickets, SUM(t.kind='reclamo') AS reclamos,
+                          SUM(tm.slug='hse' AND t.kind='reclamo') AS hse, SUM(tm.slug='calidad') AS calidad,
+                          SUM(tm.slug='logistica' AND t.kind='reclamo') AS logistica
+                          FROM tickets t JOIN teams tm ON tm.id=t.team_id WHERE t.provider_id=? AND t.created_at>=?""",
+                       (pid, since), one=True)
+    contracts = db.query("SELECT COUNT(*) AS n FROM contracts WHERE provider_id=? AND estado IN ('vigente','por_vencer')", (pid,), one=True)["n"]
+    values = form_values or dict(period="", comment="", calidad=None, cumplimiento=None, hse=None,
+                                 documentacion=doc_score_suggestion(docs_summary))
+    return render_template("staff_provider.html", p=p, st=st, docs_summary=docs_summary, evaluations=evaluations,
+                           history=history, signals=signals, contracts=contracts, values=values,
+                           errors=form_errors or {}, doc_suggestion=doc_score_suggestion(docs_summary))
+
+
+@app.post("/equipo/proveedores/<int:pid>/evaluar")
+@manage_providers_required
+def staff_provider_evaluate(pid):
+    if not db.query("SELECT 1 FROM providers WHERE id=?", (pid,), one=True):
+        abort(404)
+    f = request.form
+    values = dict(period=(f.get("period") or "").strip()[:60], comment=(f.get("comment") or "").strip()[:1000])
+    errors = {}
+    for key, *_ in db.SCORING_CRITERIA:
+        v = f.get(key, type=int)
+        values[key] = v
+        if v not in (1, 2, 3, 4, 5):
+            errors[key] = "Elegí una calificación de 1 a 5."
+    if not values["period"]:
+        errors["period"] = "Indicá el período evaluado (por ejemplo «Cuarto trimestre 2026»)."
+    if errors:
+        flash("Revisá la evaluación: faltan datos.", "error")
+        return staff_provider_detail(pid, form_errors=errors, form_values=values), 400
+    score, cat = db.compute_score(values)
+    db.execute("""INSERT INTO provider_evaluations (provider_id, period, calidad, cumplimiento, hse, documentacion, score, category,
+                  comment, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               (pid, values["period"], values["calidad"], values["cumplimiento"], values["hse"], values["documentacion"],
+                score, cat, values["comment"], g.user["id"], db.now_iso()))
+    msg = f"Evaluación registrada: score {score} (categoría {cat}, {CATEGORY_LABELS[cat].lower()})."
+    if cat == "D" and not provider_standing(pid)["blocks"]:
+        msg += " El score es no apto: evaluá registrar un bloqueo."
+    flash(msg, "success")
+    return redirect(url_for("staff_provider_detail", pid=pid))
+
+
+@app.post("/equipo/proveedores/<int:pid>/bloquear")
+@manage_providers_required
+def staff_provider_block(pid):
+    if not db.query("SELECT 1 FROM providers WHERE id=?", (pid,), one=True):
+        abort(404)
+    kind = request.form.get("kind")
+    reason = (request.form.get("reason") or "").strip()[:1000]
+    if kind not in BLOCK_KINDS or not reason:
+        flash("Elegí el tipo de bloqueo y escribí el motivo.", "error")
+    elif db.query("SELECT 1 FROM provider_blocks WHERE provider_id=? AND kind=? AND lifted_at IS NULL", (pid, kind), one=True):
+        flash(f"Ya hay un bloqueo activo de tipo «{BLOCK_KINDS[kind][0]}».", "error")
+    else:
+        db.execute("INSERT INTO provider_blocks (provider_id, kind, reason, created_by, created_at) VALUES (?,?,?,?,?)",
+                   (pid, kind, reason, g.user["id"], db.now_iso()))
+        flash(f"Bloqueo registrado: {BLOCK_KINDS[kind][0]}.", "success")
+    return redirect(url_for("staff_provider_detail", pid=pid) + "#bloqueos")
+
+
+@app.post("/equipo/proveedores/<int:pid>/bloqueos/<int:bid>/levantar")
+@manage_providers_required
+def staff_provider_unblock(pid, bid):
+    b = db.query("SELECT * FROM provider_blocks WHERE id=? AND provider_id=? AND lifted_at IS NULL", (bid, pid), one=True)
+    if not b:
+        abort(404)
+    reason = (request.form.get("lift_reason") or "").strip()[:1000]
+    if not reason:
+        flash("Indicá por qué se levanta el bloqueo.", "error")
+    else:
+        db.execute("UPDATE provider_blocks SET lifted_at=?, lifted_by=?, lift_reason=? WHERE id=?",
+                   (db.now_iso(), g.user["id"], reason, bid))
+        flash(f"Bloqueo levantado: {BLOCK_KINDS[b['kind']][0]}.", "success")
+    return redirect(url_for("staff_provider_detail", pid=pid) + "#bloqueos")
 
 
 # ---------------------------------------------------------------------------

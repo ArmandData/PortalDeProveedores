@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, status_badge, priority, team_tag, sla, avatar, contract_badge %}
+{% from "_scoring.html" import standing_badge, score_badge %}
 {% block title %}{{ t.code }}{% endblock %}
 {% block main %}
 <div class="page" style="max-width:1320px">
@@ -109,6 +110,19 @@
         </div>
       </section>
       {% endif %}
+
+      <section class="card">
+        <div class="card-head"><h2>Estado para operar</h2>{{ standing_badge(standing) }}</div>
+        <div class="card-body">
+          {% if standing.blocks or standing.auto_blocks %}
+            <ul class="doc-mini">{% for b in standing.blocks + standing.auto_blocks %}<li><span>{{ icon('lock', 'icon-sm') }}</span><span>{{ b.label }}<small>{{ b.effect }}</small></span></li>{% endfor %}</ul>
+          {% else %}<p class="muted">Sin bloqueos activos.</p>{% endif %}
+          {% if can_manage_providers() %}
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">{{ score_badge(standing.last, standing.trend) }}
+              <a class="btn btn-ghost btn-sm" href="{{ url_for('staff_provider_detail', pid=p.id) }}">Ver scoring</a></div>
+          {% endif %}
+        </div>
+      </section>
 
       <section class="card">
         <div class="card-head"><h2>Documentación del proveedor</h2>

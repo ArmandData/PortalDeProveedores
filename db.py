@@ -186,7 +186,38 @@ CREATE TABLE IF NOT EXISTS ticket_events (
     created_at TEXT NOT NULL
 );
 
+-- Scoring de proveedores: evaluaciones periódicas (solo Proveedores y Performance y el administrador)
+CREATE TABLE IF NOT EXISTS provider_evaluations (
+    id INTEGER PRIMARY KEY,
+    provider_id INTEGER NOT NULL REFERENCES providers(id),
+    period TEXT NOT NULL,
+    calidad INTEGER NOT NULL CHECK (calidad BETWEEN 1 AND 5),
+    cumplimiento INTEGER NOT NULL CHECK (cumplimiento BETWEEN 1 AND 5),
+    hse INTEGER NOT NULL CHECK (hse BETWEEN 1 AND 5),
+    documentacion INTEGER NOT NULL CHECK (documentacion BETWEEN 1 AND 5),
+    score INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL
+);
+
+-- Bloqueos que impiden o restringen que el proveedor siga operando
+CREATE TABLE IF NOT EXISTS provider_blocks (
+    id INTEGER PRIMARY KEY,
+    provider_id INTEGER NOT NULL REFERENCES providers(id),
+    kind TEXT NOT NULL CHECK (kind IN ('suspension', 'ingreso', 'adjudicaciones')),
+    reason TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    lifted_at TEXT,
+    lifted_by INTEGER REFERENCES users(id),
+    lift_reason TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_evals_provider ON provider_evaluations(provider_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_blocks_provider ON provider_blocks(provider_id, lifted_at);
 CREATE INDEX IF NOT EXISTS idx_tickets_provider ON tickets(provider_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_team ON tickets(team_id, status);
 CREATE INDEX IF NOT EXISTS idx_conv_provider ON conversations(provider_id);
@@ -206,7 +237,9 @@ TEAMS = [
     ("impuestos", "Impuestos y Retenciones", "Retenciones, percepciones, certificados de exclusión, regímenes provinciales y constancias.", 72, "#a16207"),
     ("maestro", "Alta y Documentación de Proveedores", "Alta, datos bancarios y fiscales, seguros (ART, pólizas), habilitaciones y documentación para ingresar a yacimiento.", 72, "#475569"),
     ("general", "Mesa de Ayuda General", "Consultas que no encajan en otra categoría o requieren análisis.", 48, "#4f46e5"),
+    ("performance", "Proveedores y Performance", "Evaluación de desempeño y scoring de proveedores, bloqueos y habilitación para operar.", 72, "#0e7490"),
 ]
+PERFORMANCE_TEAM = TEAMS[-1]
 
 
 # Tipos de caso iniciales: (equipo, nombre, descripción, tipo, prioridad, h 1ra respuesta, h resolución, palabras clave)
@@ -245,6 +278,8 @@ CASE_TYPES = [
      "consulta", "alta", 24, 72, "cbu, datos bancarios, domicilio fiscal, razon social, alta de proveedor"),
     ("general", "Otra consulta", "Consultas que no encajan en otro tipo de caso.",
      "consulta", "media", 24, 48, ""),
+    ("performance", "Evaluación de desempeño o bloqueo", "Consultas o reclamos sobre la evaluación del proveedor, una suspensión o un bloqueo para operar.",
+     "consulta", "alta", 24, 72, "evaluacion, desempeno, scoring, puntaje, calificacion, suspendid, suspension, bloquead, bloqueo, inhabilitad"),
 ]
 
 
@@ -291,6 +326,10 @@ def init_db(seed=True):
         _seed(conn)
     if seed and conn.execute("SELECT COUNT(*) FROM case_types").fetchone()[0] == 0:
         _seed_case_types(conn)
+    if seed:
+        _ensure_performance_team(conn)
+    if seed and conn.execute("SELECT COUNT(*) FROM provider_evaluations").fetchone()[0] == 0:
+        _seed_scoring(conn)
     conn.commit()
     conn.close()
 
@@ -330,6 +369,73 @@ def _seed_case_types(conn):
         if ct:
             due = (datetime.fromisoformat(t["created_at"]) + timedelta(hours=ct["response_hours"])).isoformat(sep=" ")
             conn.execute("UPDATE tickets SET case_type_id=?, response_due=? WHERE id=?", (ct["id"], due, t["id"]))
+
+
+def _ensure_performance_team(conn):
+    """Bases anteriores: agrega el equipo Proveedores y Performance, su agente y su tipo de caso."""
+    slug, name, desc, sla, color = PERFORMANCE_TEAM
+    if conn.execute("SELECT 1 FROM teams WHERE slug=?", (slug,)).fetchone():
+        return
+    team_id = conn.execute("INSERT INTO teams (slug, name, description, sla_hours, color) VALUES (?,?,?,?,?)",
+                           PERFORMANCE_TEAM).lastrowid
+    # El agente nuevo usa la misma contraseña que los demás agentes (se copia el hash, nunca se conoce la clave).
+    ref = conn.execute("SELECT password_hash FROM users WHERE role='agent' ORDER BY id LIMIT 1").fetchone()
+    if ref and not conn.execute("SELECT 1 FROM users WHERE username=?", (f"agente.{slug}",)).fetchone():
+        conn.execute("""INSERT INTO users (username,email,full_name,password_hash,role,team_id,created_at)
+                        VALUES (?,?,?,?,?,?,?)""",
+                     (f"agente.{slug}", f"{slug}@operadora.com", f"Agente {name}", ref[0], "agent", team_id, now_iso()))
+    ts = now_iso()
+    order = (conn.execute("SELECT COALESCE(MAX(sort_order), 0) FROM case_types").fetchone()[0] or 0) + 10
+    for (team, ct_name, ct_desc, kind, prio, resp_h, res_h, kws) in CASE_TYPES:
+        if team == slug:
+            conn.execute("""INSERT INTO case_types (name, description, kind, team_id, priority, response_hours, resolution_hours,
+                            keywords, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                         (ct_name, ct_desc, kind, team_id, prio, resp_h, res_h, kws, order, ts, ts))
+
+
+# Criterios del scoring: (clave, nombre, peso). Cada criterio se califica de 1 a 5.
+SCORING_CRITERIA = [
+    ("calidad", "Calidad del producto o servicio", 30),
+    ("cumplimiento", "Cumplimiento de plazos y entregas", 25),
+    ("hse", "Desempeño HSE", 25),
+    ("documentacion", "Documentación y gestión administrativa", 20),
+]
+
+
+def compute_score(values):
+    """Score 0-100 ponderado y categoría (A a D) a partir de calificaciones 1-5."""
+    total = sum(values[k] * w for k, _, w in SCORING_CRITERIA) / sum(w for *_, w in SCORING_CRITERIA)
+    score = round((total - 1) / 4 * 100)
+    category = "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 50 else "D"
+    return score, category
+
+
+def _seed_scoring(conn):
+    """Evaluaciones y bloqueos de ejemplo para la demo."""
+    if not conn.execute("SELECT COUNT(*) FROM providers").fetchone()[0]:
+        return
+    now = datetime.now().replace(microsecond=0)
+    evals = [  # (proveedor, días atrás, período, calidad, cumplimiento, hse, documentación, comentario)
+        (1, 190, "1er semestre 2026", 4, 4, 5, 4, "Buen desempeño en workover. Partes diarios completos y a tiempo."),
+        (1, 20, "Tercer trimestre 2026", 4, 3, 4, 2, "Demoras en la presentación de certificados e inducción HSE vencida en parte de la dotación."),
+        (2, 175, "1er semestre 2026", 5, 4, 5, 5, "Entregas OCTG conformes, mill certificates completos."),
+        (2, 15, "Tercer trimestre 2026", 5, 5, 5, 4, "Sin no conformidades en el período."),
+        (3, 160, "1er semestre 2026", 3, 3, 3, 3, "Esperas en accesos a locación y documentación de flota incompleta."),
+        (3, 10, "Tercer trimestre 2026", 2, 3, 1, 2, "Derrame menor en descarga y RTO vencida en 3 unidades. Se suspende hasta regularizar."),
+    ]
+    for pid, days, period, cal, cum, hse, doc, comment in evals:
+        score, cat = compute_score(dict(calidad=cal, cumplimiento=cum, hse=hse, documentacion=doc))
+        conn.execute("""INSERT INTO provider_evaluations (provider_id, period, calidad, cumplimiento, hse, documentacion, score,
+                        category, comment, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                     (pid, period, cal, cum, hse, doc, score, cat, comment, (now - timedelta(days=days)).isoformat(sep=" ")))
+    conn.execute("""INSERT INTO provider_blocks (provider_id, kind, reason, created_at) VALUES (?,?,?,?)""",
+                 (3, "suspension", "Derrame de agua de retorno en locación AE y RTO vencida en 3 unidades. "
+                                   "Se levanta con el informe de causa raíz aprobado por HSE y la flota regularizada.",
+                  (now - timedelta(days=10)).isoformat(sep=" ")))
+    conn.execute("""INSERT INTO provider_blocks (provider_id, kind, reason, created_at, lifted_at, lift_reason) VALUES (?,?,?,?,?,?)""",
+                 (1, "adjudicaciones", "Score C en la evaluación de 2025: sin nuevas adjudicaciones hasta la próxima evaluación.",
+                  (now - timedelta(days=300)).isoformat(sep=" "), (now - timedelta(days=190)).isoformat(sep=" "),
+                  "Evaluación del 1er semestre 2026 con score B."))
 
 
 def _seed(conn):

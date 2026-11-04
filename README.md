@@ -100,6 +100,17 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
 - El administrador crea, edita y desactiva tipos; los agentes la ven en solo lectura.
 - Los plazos son internos: el proveedor no ve plazos de respuesta, SLA ni tiempos promedio.
 
+**Proveedores y scoring** (`/equipo/proveedores`, solo Proveedores y Performance y el administrador)
+- Evaluaciones periódicas de cada proveedor: calidad (30%), cumplimiento (25%), HSE (25%) y
+  documentación (20%), de 1 a 5. Score de 0 a 100 y categoría A (preferente), B (aprobado),
+  C (en observación) o D (no apto), con tendencia respecto de la evaluación anterior.
+- Estado para operar: **habilitado**, **operación restringida** (sin nuevas adjudicaciones,
+  bloqueo de ingreso a yacimiento o documentación obligatoria vencida) o **bloqueado**
+  (suspensión total). Los bloqueos se registran y se levantan con motivo e historial.
+- Los demás equipos ven el estado para operar en cada ticket, pero no el score. El proveedor
+  ve un aviso si tiene un bloqueo vigente, sin el motivo ni el score.
+- Usuario del equipo: `agente.performance` (misma contraseña que los demás agentes).
+
 **Interfaz**
 - Paleta corporativa (azul institucional `#005DA7`, grises neutros y tipografía tipo DIN)
   con modo claro y oscuro: botón en el menú (o arriba en el celular) que recuerda la

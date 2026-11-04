@@ -7,7 +7,7 @@
   <title>{% block title %}Portal de Proveedores{% endblock %} · {{ company }}</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23005da7'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
   <script src="{{ url_for('static', filename='js/theme-init.js') }}?v=3"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=6">
   <script src="{{ url_for('static', filename='js/app.js') }}?v=3" defer></script>
   {% block head %}{% endblock %}
 </head>
@@ -40,6 +40,9 @@
         <span class="nav-label">Gestión</span>
         <a href="{{ url_for('staff_analytics') }}" {% if ep == 'staff_analytics' %}aria-current="page"{% endif %}>{{ icon('chart') }}Analítica</a>
         <a href="{{ url_for('case_types') }}" {% if ep in ('case_types', 'case_type_new', 'case_type_edit') %}aria-current="page"{% endif %}>{{ icon('clock') }}Tipos de caso y SLA</a>
+        {% if can_manage_providers() %}
+        <a href="{{ url_for('staff_providers') }}" {% if ep in ('staff_providers', 'staff_provider_detail') %}aria-current="page"{% endif %}>{{ icon('building') }}Proveedores y scoring</a>
+        {% endif %}
       {% endif %}
     </nav>
     <div class="sidebar-foot">
@@ -70,7 +73,13 @@
       <button class="btn btn-ghost icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Cambiar a modo oscuro">
         <span class="when-light">{{ icon('moon') }}</span><span class="when-dark">{{ icon('sun') }}</span></button>
     </header>
-    <main id="main" tabindex="-1">{% block main %}{% endblock %}</main>
+    <main id="main" tabindex="-1">
+      {% if nav_blocks %}
+      <div class="block-notice" role="alert">{{ icon('lock') }}
+        <span><strong>{{ 'Tu empresa tiene la operación suspendida' if 'Suspensión total' in nav_blocks else 'Tu empresa tiene la operación restringida' }}</strong>
+          ({{ nav_blocks | join(' · ') }}). Para conocer el motivo y cómo regularizarlo, consultá en el <a href="{{ url_for('assistant') }}">asistente</a>: lo deriva a Proveedores y Performance.</span></div>
+      {% endif %}
+      {% block main %}{% endblock %}</main>
   </div>
 </div>
 {% endblock %}
