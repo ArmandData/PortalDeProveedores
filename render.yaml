@@ -32,3 +32,16 @@ services:
         generateValue: true
       - key: ANTHROPIC_API_KEY
         sync: false          # Render la pide al crear el servicio
+      # Opcional: e-mails de alertas de vencimiento a los proveedores (sin estas variables, las alertas solo se ven en el portal)
+      - key: PORTAL_SMTP_HOST
+        sync: false
+      - key: PORTAL_SMTP_PORT
+        value: "587"
+      - key: PORTAL_SMTP_USER
+        sync: false
+      - key: PORTAL_SMTP_PASSWORD
+        sync: false
+      - key: PORTAL_SMTP_FROM
+        sync: false
+      - key: PORTAL_BASE_URL
+        value: https://portal-proveedores-ow1e.onrender.com

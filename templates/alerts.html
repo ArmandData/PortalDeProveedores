@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Alertas{% endblock %}
+{% macro days_label(n) -%}
+  {% if n < 0 %}Venció hace {{ -n }} día{{ 's' if n < -1 }}{% elif n == 0 %}Vence hoy{% elif n == 1 %}Vence mañana{% else %}En {{ n }} días{% endif %}
+{%- endmacro %}
+{% block main %}
+<div class="page" style="max-width:960px">
+  <div class="page-head">
+    <div>
+      <h1>Alertas</h1>
+      <p>Documentación por vencer, vencida o con plazo de presentación próximo. Te avisamos con {{ thresholds | join(', ') }} días de anticipación.</p>
+    </div>
+    <a class="btn btn-secondary" href="{{ url_for('documents') }}">{{ icon('shield', 'icon-sm') }}Ir a Mi documentación</a>
+  </div>
+
+  {% if alerts %}
+  <section class="card">
+    {% set groups = [('Vencidos', alerts | selectattr('days', 'lt', 0) | list),
+                     ('Próximos 7 días', alerts | selectattr('days', 'ge', 0) | selectattr('days', 'le', 7) | list),
+                     ('Más adelante', alerts | selectattr('days', 'gt', 7) | list)] %}
+    {% for label, items in groups if items %}
+      <h2 class="alert-group">{{ label }} · {{ items | length }}</h2>
+      <ul class="alert-list" role="list">
+        {% for a in items %}
+        <li class="alert-item alert-{{ a.severity }}">
+          <span class="a-icon" aria-hidden="true">{{ icon('alert' if a.days < 0 else 'clock') }}</span>
+          <div>
+            <div class="a-title">{{ a.title }}{% if a.unread %}<span class="a-new">Nueva</span>{% endif %}</div>
+            <div class="a-body">{{ a.body }}{% if a.emailed %} <span class="muted">· También te la enviamos por e-mail.</span>{% endif %}</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="alert-days">{{ days_label(a.days) }}</span>
+            <a class="btn btn-sm {{ 'btn-primary' if a.severity == 'danger' else 'btn-secondary' }}" href="{{ a.link }}">{{ 'Renovar' if a.ref_key.startswith('doc:') or a.ref_key.startswith('req:') else 'Presentar' }}</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="card"><div class="empty" style="padding:40px 20px;text-align:center">
+    <div style="color:var(--success);margin-bottom:8px">{{ icon('check-circle', 'icon-lg') }}</div>
+    <h2>No tenés alertas</h2>
+    <p class="muted">Ningún documento vence en los próximos {{ thresholds | max }} días y no hay plazos de presentación cerca.</p>
+  </div></section>
+  {% endif %}
+</div>
+{% endblock %}

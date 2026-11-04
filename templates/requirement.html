@@ -27,6 +27,11 @@
     <span class="badge badge-req-{{ item.status }}" style="font-size:14px">{{ item.status_label }}</span>
   </div>
 
+  {% if item.plan.due_date and item.status in ('faltante', 'rechazado') %}
+    <p class="due-line {{ 't-danger' if item.days_to_due < 0 }}">{{ icon('clock', 'icon-sm') }}
+      {% if item.days_to_due < 0 %}El plazo para presentarlo venció el {{ item.plan.due_date.strftime('%d/%m/%Y') }}{% else %}Plazo: hasta el {{ item.plan.due_date.strftime('%d/%m/%Y') }}{% endif %}
+      ({{ item.plan.due_days }} días {{ 'antes' if item.plan.timing == 'antes' else 'después' }} del inicio de operaciones){% if item.plan.pre_start %} · <strong>obligatorio para operar</strong>{% endif %}.</p>
+  {% endif %}
   {% if item.status == 'rechazado' %}
     <div class="alert alert-error" style="margin-bottom:16px" role="alert">{{ icon('alert') }}<span><strong>Hace falta corregirlo.</strong> {{ item.sub.review_comment }}</span></div>
   {% elif item.status == 'en_revision' %}

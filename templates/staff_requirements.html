@@ -52,9 +52,10 @@
               <div><a class="subject" href="{{ url_for('staff_requirements_provider', pid=row.p.id) }}">{{ row.p.razon_social }}</a><span class="sub mono">{{ row.p.cuit }}</span></div></div></td>
             <td class="nowrap" data-label="Completitud">
               <div class="req-progress req-progress-sm"><span class="req-pct">{{ row.summary.pct }}%</span><span class="req-bar"><i style="width: {{ row.summary.pct }}%"></i></span></div>
-              <span class="sub">{{ row.summary.done }} de {{ row.summary.total }}{% if row.summary.en_revision %} · {{ row.summary.en_revision }} en revisión{% endif %}{% if row.summary.pendientes %} · {{ row.summary.pendientes }} pendiente{{ 's' if row.summary.pendientes > 1 }}{% endif %}</span></td>
+              <span class="sub">{{ row.summary.done }} de {{ row.summary.total }}{% if row.summary.en_revision %} · {{ row.summary.en_revision }} en revisión{% endif %}{% if row.summary.pendientes %} · {{ row.summary.pendientes }} pendiente{{ 's' if row.summary.pendientes > 1 }}{% endif %}</span>
+              {% if row.summary.pre_start_missing %}<span class="sub t-danger">{{ icon('lock', 'icon-sm') }} Previos al inicio incompletos</span>{% endif %}</td>
             {% for r in reqs %}{% set i = row.by_req[r.id] %}
-              <td class="req-col hide-md"><span class="req-dot req-dot-{{ i.status }}" title="{{ r.name }}: {{ i.status_label }}" aria-label="{{ i.status_label }}"></span></td>
+              <td class="req-col hide-md">{% if i.status == 'no_aplica' %}<span class="muted" title="{{ r.name }}: no se le pide">—</span>{% else %}<span class="req-dot req-dot-{{ i.status }}{% if i.overdue %} req-dot-overdue{% endif %}" title="{{ r.name }}: {{ i.status_label }}{% if i.overdue %} · plazo vencido{% endif %}" aria-label="{{ i.status_label }}{% if i.overdue %}, plazo vencido{% endif %}"></span>{% endif %}</td>
             {% endfor %}
           </tr>
           {% endfor %}
@@ -63,6 +64,7 @@
     </div>
     <div class="req-legend">
       {% for k in ('aprobado', 'por_vencer', 'en_revision', 'rechazado', 'vencido', 'faltante') %}<span><span class="req-dot req-dot-{{ k }}" aria-hidden="true"></span>{{ REQ_STATUS_LABELS[k] }}</span>{% endfor %}
+      <span><span class="req-dot req-dot-faltante req-dot-overdue" aria-hidden="true"></span>Plazo vencido</span><span>— No se le pide</span>
     </div>
   </section>
 </div>

@@ -227,7 +227,42 @@ CREATE TABLE IF NOT EXISTS requirements (
     active INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    timing TEXT NOT NULL DEFAULT 'antes',
+    due_days INTEGER NOT NULL DEFAULT 0
+);
+
+-- Qué requisitos se le piden a cada proveedor y en qué plazo (si no hay fila, valen los del catálogo)
+CREATE TABLE IF NOT EXISTS provider_requirement_settings (
+    provider_id INTEGER NOT NULL REFERENCES providers(id),
+    requirement_id INTEGER NOT NULL REFERENCES requirements(id),
+    applies INTEGER NOT NULL DEFAULT 1,
+    timing TEXT NOT NULL CHECK (timing IN ('antes', 'despues')),
+    due_days INTEGER NOT NULL,
+    updated_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (provider_id, requirement_id)
+);
+
+-- Alarmas para el proveedor: una por documento, requisito y umbral de aviso
+CREATE TABLE IF NOT EXISTS provider_alerts (
+    id INTEGER PRIMARY KEY,
+    provider_id INTEGER NOT NULL REFERENCES providers(id),
+    ref_key TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('info', 'warn', 'danger')),
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    link TEXT NOT NULL DEFAULT '',
+    due_date TEXT,
+    created_at TEXT NOT NULL,
+    read_at TEXT,
+    emailed_at TEXT,
+    UNIQUE (provider_id, ref_key)
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 
 -- Presentaciones del proveedor para cada requisito (la última es la vigente)
@@ -256,6 +291,7 @@ CREATE TABLE IF NOT EXISTS requirement_submissions (
 
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_reqsub_provider ON requirement_submissions(provider_id, requirement_id, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_alerts_provider ON provider_alerts(provider_id, read_at);
 CREATE INDEX IF NOT EXISTS idx_evals_provider ON provider_evaluations(provider_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_blocks_provider ON provider_blocks(provider_id, lifted_at);
 CREATE INDEX IF NOT EXISTS idx_tickets_provider ON tickets(provider_id);
@@ -383,6 +419,8 @@ def init_db(seed=True):
         _seed_scoring(conn)
     if seed and conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0] == 0:
         _seed_requirements(conn)
+    if seed:
+        _ensure_operation_dates(conn)
     conn.commit()
     conn.close()
 
@@ -393,9 +431,13 @@ def _migrate(conn):
         "tickets": (("case_type_id", "INTEGER REFERENCES case_types(id)"), ("response_due", "TEXT")),
         "attachments": (("sha256", "TEXT"), ("content_hash", "TEXT")),
         "conversations": (("dup_warned", "TEXT"),),
+        "providers": (("inicio_operaciones", "TEXT"),),
+        "requirements": (("timing", "TEXT NOT NULL DEFAULT 'antes'"), ("due_days", "INTEGER NOT NULL DEFAULT 0")),
     }
     for table, columns in new_columns.items():
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if not cols:
+            continue
         for col, ddl in columns:
             if col not in cols:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
@@ -423,6 +465,18 @@ def _seed_case_types(conn):
             due = (datetime.fromisoformat(t["created_at"]) + timedelta(hours=ct["response_hours"])).isoformat(sep=" ")
             conn.execute("UPDATE tickets SET case_type_id=?, response_due=? WHERE id=?", (ct["id"], due, t["id"]))
 
+
+# Momento de presentación de cada requisito inicial: (antes/despues del inicio de operaciones, días)
+REQUIREMENT_TIMING = {
+    "Código de Ética y Conducta para Proveedores": ("antes", 10),
+    "Acuerdo de Confidencialidad": ("antes", 10),
+    "Compromiso con la Política HSE y Reglas que Salvan Vidas": ("antes", 5),
+    "Declaración jurada de conflicto de intereses": ("antes", 10),
+    "Ratio de accidentabilidad (últimos 12 meses)": ("antes", 15),
+    "Estados contables del último ejercicio": ("despues", 30),
+    "Plan anual de HSE": ("despues", 30),
+}
+ALERT_THRESHOLDS_DEFAULT = "30, 15, 7, 1"
 
 # Requisitos iniciales: (nombre, descripción, tipo, meses de vigencia o None, texto del documento a firmar)
 REQUIREMENTS = [
@@ -476,8 +530,9 @@ def _seed_requirements(conn):
     import json
     ts = now_iso()
     for i, (name, desc, kind, months, body) in enumerate(REQUIREMENTS):
-        conn.execute("""INSERT INTO requirements (name, description, kind, body, validity_months, sort_order, created_at, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?)""", (name, desc, kind, body, months, (i + 1) * 10, ts, ts))
+        timing, days = REQUIREMENT_TIMING.get(name, ("antes", 0))
+        conn.execute("""INSERT INTO requirements (name, description, kind, body, validity_months, sort_order, created_at, updated_at,
+                        timing, due_days) VALUES (?,?,?,?,?,?,?,?,?,?)""", (name, desc, kind, body, months, (i + 1) * 10, ts, ts, timing, days))
     if not conn.execute("SELECT COUNT(*) FROM providers").fetchone()[0]:
         return
     req = {r[0]: r[1] for r in conn.execute("SELECT name, id FROM requirements")}
@@ -515,6 +570,25 @@ def _seed_requirements(conn):
     sub(3, REQUIREMENTS[0][0], "aprobado", 150, signer=tra)
     sub(3, REQUIREMENTS[4][0], "aprobado", 30, data=dict(periodo="Oct 2025 a Sep 2026", horas_hombre=96000, accidentes=4, dias_perdidos=120, fatalidades=0),
         file="Certificado siniestralidad Galeno ART.pdf")
+
+
+def _ensure_operation_dates(conn):
+    """Bases anteriores: fecha de inicio de operaciones (la del primer contrato), plazos del catálogo y umbrales de alarma."""
+    conn.execute("""UPDATE providers SET inicio_operaciones=(SELECT MIN(fecha_inicio) FROM contracts c WHERE c.provider_id=providers.id)
+                    WHERE inicio_operaciones IS NULL""")
+    if conn.execute("SELECT COUNT(*) FROM requirements WHERE due_days<>0 OR timing<>'antes'").fetchone()[0] == 0:
+        for name, (timing, days) in REQUIREMENT_TIMING.items():
+            conn.execute("UPDATE requirements SET timing=?, due_days=? WHERE name=?", (timing, days, name))
+    conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('alert_thresholds', ?)", (ALERT_THRESHOLDS_DEFAULT,))
+
+
+def get_setting(key, default=None):
+    row = query("SELECT value FROM settings WHERE key=?", (key,), one=True)
+    return row["value"] if row else default
+
+
+def set_setting(key, value):
+    execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
 
 def _ensure_contracts_team(conn):

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Configurar requisitos · {{ p.razon_social }}{% endblock %}
+{% block main %}
+<div class="page" style="max-width:1100px">
+  <div class="breadcrumb"><a href="{{ url_for('staff_requirements') }}">Requisitos de proveedores</a>{{ icon('chevron', 'icon-sm') }}
+    <a href="{{ url_for('staff_requirements_provider', pid=p.id) }}">{{ p.razon_social }}</a>{{ icon('chevron', 'icon-sm') }}<span>Configurar</span></div>
+  <div class="page-head">
+    <div style="display:flex;gap:14px;align-items:center">{{ avatar(p, 'avatar-lg') }}
+      <div><h1>Requisitos y plazos</h1><p>Qué se le pide a {{ p.razon_social }}, qué es obligatorio antes de iniciar la operación y en qué plazo presentarlo.</p></div></div>
+  </div>
+
+  <form method="post" novalidate>
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <section class="card" style="margin-bottom:20px">
+      <div class="card-body" style="display:flex;gap:20px;align-items:flex-end;flex-wrap:wrap">
+        <div class="field" style="margin:0;min-width:220px">
+          <label for="f-inicio">Fecha de inicio de operaciones</label>
+          <input class="input" id="f-inicio" name="inicio_operaciones" type="date" value="{{ form.inicio_operaciones if form else (p.inicio_operaciones or '') }}" {% if errors.inicio %}aria-invalid="true"{% endif %}>
+          {% if errors.inicio %}<span class="error-text">{{ icon('alert', 'icon-sm') }}{{ errors.inicio }}</span>{% endif %}
+        </div>
+        <p class="muted" style="flex:1;min-width:260px;font-size:13.5px">Los plazos se cuentan desde esta fecha. Los requisitos «antes del inicio» son obligatorios para operar: si faltan, la operación del proveedor queda restringida.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="table-wrap">
+        <table class="table cfg-table">
+          <caption class="sr-only">Requisitos y plazos del proveedor</caption>
+          <thead><tr><th scope="col">Se le pide</th><th scope="col">Requisito</th><th scope="col" title="Antes del inicio = obligatorio para operar">Momento</th><th scope="col">Días</th><th scope="col" class="hide-sm">Fecha límite</th></tr></thead>
+          <tbody>
+            {% for i in items %}{% set r = i.r %}
+              {% set applies = (form.get('applies_' ~ r.id) == '1') if form else i.plan.applies %}
+              {% set timing = form.get('timing_' ~ r.id) if form else i.plan.timing %}
+              {% set days = form.get('days_' ~ r.id) if form else i.plan.due_days %}
+            <tr class="{% if not applies %}is-off{% endif %}" style="cursor:default">
+              <td><label class="checkbox"><input type="checkbox" name="applies_{{ r.id }}" value="1" {% if applies %}checked{% endif %} aria-label="Pedirle {{ r.name }}"></label></td>
+              <td><strong>{{ r.name }}</strong><span class="sub">{{ REQ_KIND_LABELS[r.kind] }}{% if not r.mandatory %} · Opcional{% endif %} · catálogo: {{ r.due_days }} días {{ 'antes' if r.timing == 'antes' else 'después' }}</span>
+                {% if errors[r.id] %}<span class="error-text">{{ icon('alert', 'icon-sm') }}{{ errors[r.id] }}</span>{% endif %}</td>
+              <td><label class="sr-only" for="t-{{ r.id }}">Momento</label>
+                <select class="select" id="t-{{ r.id }}" name="timing_{{ r.id }}">
+                  <option value="antes" {% if timing == 'antes' %}selected{% endif %}>Antes del inicio</option>
+                  <option value="despues" {% if timing == 'despues' %}selected{% endif %}>Después del inicio</option>
+                </select></td>
+              <td><label class="sr-only" for="d-{{ r.id }}">Días</label>
+                <input class="input cfg-days" id="d-{{ r.id }}" name="days_{{ r.id }}" type="number" min="0" max="365" value="{{ days }}"></td>
+              <td class="hide-sm nowrap">{% if i.plan.due_date and i.plan.applies %}{{ i.plan.due_date.strftime('%d/%m/%Y') }}{% if i.overdue %} <span class="t-danger">· vencido</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body form-actions" style="border-top:1px solid var(--border)">
+        <a class="btn btn-ghost" href="{{ url_for('staff_requirements_provider', pid=p.id) }}">Cancelar</a>
+        <button class="btn btn-primary" type="submit" data-loading-text="Guardando…">Guardar</button>
+      </div>
+    </section>
+  </form>
+</div>
+{% endblock %}

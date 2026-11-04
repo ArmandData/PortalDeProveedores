@@ -110,6 +110,18 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
 - Todos los equipos ven la completitud de cada proveedor. Aprueban o rechazan con comentario
   el administrador, Alta y Documentación de Proveedores y Proveedores y Performance.
 
+**Requisitos por proveedor y alarmas**
+- El administrador define, para cada proveedor, la fecha de inicio de operaciones, qué
+  requisitos se le piden y si cada uno se presenta **N días antes del inicio** (obligatorio
+  para operar) o **N días después**. El catálogo trae los valores por defecto.
+- Si falta un requisito previo, la operación del proveedor queda restringida.
+- **Alarmas:** el proveedor ve un contador en el menú, un aviso arriba de la pantalla y la
+  sección **Alertas**, con los documentos y requisitos por vencer o vencidos y los plazos de
+  presentación. Los umbrales (por defecto 30, 15, 7 y 1 días) se configuran en el catálogo.
+- Opcional: e-mail al contacto del proveedor con las alertas nuevas, una revisión por hora.
+  Se activa con las variables `PORTAL_SMTP_HOST`, `PORTAL_SMTP_PORT`, `PORTAL_SMTP_USER`,
+  `PORTAL_SMTP_PASSWORD`, `PORTAL_SMTP_FROM` y `PORTAL_BASE_URL`.
+
 **Proveedores y scoring** (`/equipo/proveedores`, solo Proveedores y Performance y el administrador)
 - Evaluaciones periódicas de cada proveedor: calidad (30%), cumplimiento (25%), HSE (25%) y
   documentación (20%), de 1 a 5. Score de 0 a 100 y categoría A (preferente), B (aprobado),

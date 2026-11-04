@@ -26,6 +26,15 @@
 - Revisión de requisitos: administrador, Alta y Documentación (`maestro`) y Proveedores y
   Performance.
 
+## Requisitos y alarmas
+
+- Cada requisito se presenta N días antes o después del inicio de operaciones del proveedor.
+  Los «antes» son obligatorios para operar: si faltan, `provider_standing` restringe la operación.
+- El catálogo define los valores por defecto; `provider_requirement_settings` guarda solo lo que
+  el administrador cambia para un proveedor.
+- Las alarmas (`provider_alerts`) se recalculan al navegar (cada 5 minutos por sesión) y en un
+  hilo que revisa a todos una vez por hora y manda los e-mails si hay SMTP configurado.
+
 ## Base de datos
 
 - Las bases existentes (Render) se actualizan solas al iniciar, en `db.init_db()`: cada cambio

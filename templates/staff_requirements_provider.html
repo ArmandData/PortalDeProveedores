@@ -6,10 +6,22 @@
   <div class="breadcrumb"><a href="{{ url_for('staff_requirements') }}">Requisitos de proveedores</a>{{ icon('chevron', 'icon-sm') }}<span>{{ p.razon_social }}</span></div>
   <div class="page-head">
     <div style="display:flex;gap:14px;align-items:center">{{ avatar(p, 'avatar-lg') }}
-      <div><h1>{{ p.razon_social }}</h1><p><span class="mono">CUIT {{ p.cuit }}</span> · {{ p.rubro or '—' }}</p></div></div>
-    <div class="req-progress"><span class="req-pct">{{ summary.pct }}%</span><span class="req-bar"><i style="width: {{ summary.pct }}%"></i></span>
-      <span class="muted">{{ summary.done }} de {{ summary.total }} completos</span></div>
+      <div><h1>{{ p.razon_social }}</h1><p><span class="mono">CUIT {{ p.cuit }}</span> · {{ p.rubro or '—' }} ·
+        {% if summary.start %}Inicio de operaciones: <strong>{{ summary.start.strftime('%d/%m/%Y') }}</strong>{% else %}<span class="t-warn">Sin fecha de inicio de operaciones</span>{% endif %}</p></div></div>
+    <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end">
+      <div class="req-progress"><span class="req-pct">{{ summary.pct }}%</span><span class="req-bar"><i style="width: {{ summary.pct }}%"></i></span>
+        <span class="muted">{{ summary.done }} de {{ summary.total }} completos</span></div>
+      {% if g.user.role == 'admin' %}<a class="btn btn-secondary btn-sm" href="{{ url_for('provider_requirements_config', pid=p.id) }}">{{ icon('note', 'icon-sm') }}Configurar requisitos y plazos</a>{% endif %}
+    </div>
   </div>
+
+  {% if summary.pre_start_missing %}
+    <div class="alert alert-error" style="margin-bottom:16px" role="alert">{{ icon('lock') }}<span><strong>{{ 'Requisitos previos al inicio incompletos' if summary.start and summary.start <= now_date else 'No puede iniciar operaciones' }}.</strong>
+      Falta{{ 'n' if summary.pre_start_missing | length > 1 }}: {{ summary.pre_start_missing | join(', ') }}.</span></div>
+  {% elif summary.pre_start_total %}
+    <div class="alert alert-info" style="margin-bottom:16px">{{ icon('check-circle') }}<span>Completó los {{ summary.pre_start_total }} requisitos obligatorios previos al inicio de operaciones.</span></div>
+  {% endif %}
+  {% if summary.overdue %}<div class="alert alert-warning" style="margin-bottom:16px">{{ icon('clock') }}<span>{{ summary.overdue }} requisito{{ 's' if summary.overdue > 1 }} con el plazo de presentación vencido.</span></div>{% endif %}
 
   {% if summary.accidents %}{% set a = summary.accidents %}
   <section class="card" style="margin-bottom:20px">
@@ -27,7 +39,8 @@
     {% for i in items %}
     <section class="card req-review req-{{ i.status }}" id="req-{{ i.r.id }}">
       <div class="card-head">
-        <div><h2>{{ i.r.name }}</h2><p>{{ REQ_KIND_LABELS[i.r.kind] }}{% if not i.r.mandatory %} · Opcional{% endif %}{% if i.r.validity_months %} · Vigencia {{ i.r.validity_months }} meses{% else %} · Sin vencimiento{% endif %}</p></div>
+        <div><h2>{{ i.r.name }}</h2><p>{{ REQ_KIND_LABELS[i.r.kind] }}{% if not i.r.mandatory %} · Opcional{% endif %}{% if i.r.validity_months %} · Vigencia {{ i.r.validity_months }} meses{% else %} · Sin vencimiento{% endif %}
+          {% if i.status != 'no_aplica' %} · {% if i.plan.pre_start %}<span class="tag-prestart">Previo al inicio</span> {% endif %}{{ i.plan.due_days }} días {{ 'antes' if i.plan.timing == 'antes' else 'después' }} del inicio{% if i.plan.due_date %}: <span class="{{ 't-danger' if i.overdue }}">{{ 'venció el' if i.overdue else 'hasta el' }} {{ i.plan.due_date.strftime('%d/%m/%Y') }}</span>{% endif %}{% if i.plan.custom %} <span class="muted">(plazo propio)</span>{% endif %}{% endif %}</p></div>
         <span class="badge badge-req-{{ i.status }}">{{ i.status_label }}</span>
       </div>
       {% if i.sub %}{% set s = i.sub %}
@@ -53,6 +66,8 @@
         </form>
         {% endif %}
       </div>
+      {% elif i.status == 'no_aplica' %}
+      <div class="card-body"><p class="muted">No se le pide a este proveedor.</p></div>
       {% else %}
       <div class="card-body"><p class="muted">El proveedor todavía no lo presentó.</p></div>
       {% endif %}

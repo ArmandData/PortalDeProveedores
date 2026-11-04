@@ -281,7 +281,7 @@ def current_provider():
 
 @app.context_processor
 def inject_nav():
-    ctx = {}
+    ctx = {"now_date": datetime.now().date()}
     if g.get("user") and g.user["role"] == "provider":
         ctx["nav_provider"] = current_provider()
         ctx["nav_unread"] = db.query(
@@ -292,6 +292,14 @@ def inject_nav():
         ctx["nav_open"] = db.query(
             f"SELECT COUNT(*) AS n FROM tickets WHERE provider_id=? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
             (g.user["provider_id"], *OPEN_STATUSES), one=True)["n"]
+        import time as _time
+        if _time.time() - session.get("alerts_at", 0) > 300:
+            generate_alerts(g.user["provider_id"])
+            session["alerts_at"] = _time.time()
+        ctx["nav_alerts"] = db.query("""SELECT COUNT(*) AS n, SUM(severity='danger') AS danger FROM provider_alerts
+                                        WHERE provider_id=? AND read_at IS NULL""", (g.user["provider_id"],), one=True)
+        ctx["nav_alert_top"] = db.query("""SELECT title, severity FROM provider_alerts WHERE provider_id=? AND read_at IS NULL
+                                           ORDER BY severity='danger' DESC, due_date LIMIT 1""", (g.user["provider_id"],), one=True)
         ctx["nav_blocks"] = [BLOCK_KINDS[b["kind"]][0] for b in db.query(
             "SELECT kind FROM provider_blocks WHERE provider_id=? AND lifted_at IS NULL ORDER BY kind DESC", (g.user["provider_id"],))]
         _, docs_summary = provider_documents(g.user["provider_id"])
@@ -1422,6 +1430,13 @@ def provider_standing(provider_id, docs_summary=None):
                          effect=f"{docs_summary['bloqueantes']} documento{'s' if docs_summary['bloqueantes'] > 1 else ''} obligatorio"
                                 f"{'s' if docs_summary['bloqueantes'] > 1 else ''} vencido{'s' if docs_summary['bloqueantes'] > 1 else ''}. "
                                 "Se levanta solo cuando se valida la renovación."))
+    _, req_summary = provider_requirements(provider_id)
+    missing = req_summary["pre_start_missing"]
+    if missing:
+        started = req_summary["start"] and req_summary["start"] <= datetime.now().date()
+        auto.append(dict(label="Requisitos previos al inicio incompletos" if started else "No puede iniciar operaciones",
+                         effect=f"Falta{'n' if len(missing) > 1 else ''} {len(missing)} requisito{'s' if len(missing) > 1 else ''} "
+                                f"obligatorio{'s' if len(missing) > 1 else ''} antes de operar: {', '.join(missing)}."))
     evals = db.query("SELECT * FROM provider_evaluations WHERE provider_id=? ORDER BY created_at DESC, id DESC LIMIT 2", (provider_id,))
     last, prev = (evals[0] if evals else None), (evals[1] if len(evals) > 1 else None)
     if any(b["kind"] == "suspension" for b in blocks):
@@ -1553,7 +1568,8 @@ def staff_provider_unblock(pid, bid):
 # ---------------------------------------------------------------------------
 REQ_KIND_LABELS = {"firma": "Para firmar", "presentacion": "Para presentar", "accidentabilidad": "Indicador HSE"}
 REQ_STATUS_LABELS = {"faltante": "Pendiente", "en_revision": "En revisión", "aprobado": "Aprobado", "por_vencer": "Por vencer",
-                     "rechazado": "Rechazado", "vencido": "Vencido"}
+                     "rechazado": "Rechazado", "vencido": "Vencido", "no_aplica": "No se le pide"}
+TIMING_LABELS = {"antes": "Antes del inicio", "despues": "Después del inicio"}
 REQ_DONE = ("aprobado", "por_vencer")
 REVIEWER_SLUGS = ("maestro", PERFORMANCE_SLUG)
 ACCIDENT_FIELDS = [("horas_hombre", "Horas hombre trabajadas", 1, 1_000_000_000), ("accidentes", "Accidentes con baja", 0, 100_000),
@@ -1576,16 +1592,38 @@ def _submission_view(sub):
     return d
 
 
-def provider_requirements(provider_id):
-    """Estado de cada requisito activo para el proveedor (según su última presentación) y resumen de completitud."""
+def requirement_plan(r, override, start):
+    """Si se le pide al proveedor, momento (antes/después del inicio), días y fecha límite de presentación."""
+    applies = bool(override["applies"]) if override else True
+    timing = override["timing"] if override else (r["timing"] or "antes")
+    days = override["due_days"] if override else (r["due_days"] or 0)
+    due = None
+    if start:
+        due = start - timedelta(days=days) if timing == "antes" else start + timedelta(days=days)
+    return dict(applies=applies, timing=timing, due_days=days, due_date=due, custom=bool(override),
+                pre_start=timing == "antes" and bool(r["mandatory"]))
+
+
+def provider_requirements(provider_id, include_not_applicable=False):
+    """Estado de cada requisito que se le pide al proveedor (según su última presentación), plazos y resumen de completitud."""
     today = datetime.now().date()
     reqs = db.query("SELECT * FROM requirements WHERE active=1 ORDER BY sort_order, id")
+    prov = db.query("SELECT inicio_operaciones FROM providers WHERE id=?", (provider_id,), one=True)
+    start = datetime.fromisoformat(prov["inicio_operaciones"]).date() if prov and prov["inicio_operaciones"] else None
+    overrides = {o["requirement_id"]: o for o in db.query(
+        "SELECT * FROM provider_requirement_settings WHERE provider_id=?", (provider_id,))}
     latest = {r["requirement_id"]: r for r in db.query(
         """SELECT s.*, u.full_name AS reviewed_by_name FROM requirement_submissions s LEFT JOIN users u ON u.id=s.reviewed_by
            WHERE s.provider_id=? AND s.id IN (SELECT MAX(id) FROM requirement_submissions WHERE provider_id=? GROUP BY requirement_id)""",
         (provider_id, provider_id))}
     items = []
     for r in reqs:
+        plan = requirement_plan(r, overrides.get(r["id"]), start)
+        if not plan["applies"]:
+            if include_not_applicable:
+                items.append(dict(r=r, sub=None, status="no_aplica", status_label=REQ_STATUS_LABELS["no_aplica"], days_left=None,
+                                  plan=plan, days_to_due=None, overdue=False))
+            continue
         sub = latest.get(r["id"])
         status, days_left = "faltante", None
         if sub:
@@ -1593,21 +1631,27 @@ def provider_requirements(provider_id):
             if status == "aprobado" and sub["valid_until"]:
                 days_left = (datetime.fromisoformat(sub["valid_until"]).date() - today).days
                 status = "vencido" if days_left < 0 else ("por_vencer" if days_left <= 30 else "aprobado")
+        days_to_due = (plan["due_date"] - today).days if plan["due_date"] else None
         items.append(dict(r=r, sub=_submission_view(sub) if sub else None, status=status, status_label=REQ_STATUS_LABELS[status],
-                          days_left=days_left))
-    mandatory = [i for i in items if i["r"]["mandatory"]]
+                          days_left=days_left, plan=plan, days_to_due=days_to_due,
+                          overdue=status in ("faltante", "rechazado") and days_to_due is not None and days_to_due < 0))
+    applicable = [i for i in items if i["status"] != "no_aplica"]
+    mandatory = [i for i in applicable if i["r"]["mandatory"]]
     done = sum(1 for i in mandatory if i["status"] in REQ_DONE)
     summary = dict(total=len(mandatory), done=done, pct=round(100 * done / len(mandatory)) if mandatory else 100,
                    en_revision=sum(1 for i in items if i["status"] == "en_revision"),
                    pendientes=sum(1 for i in mandatory if i["status"] in ("faltante", "rechazado", "vencido")),
-                   rechazados=sum(1 for i in items if i["status"] == "rechazado"))
+                   rechazados=sum(1 for i in items if i["status"] == "rechazado"),
+                   overdue=sum(1 for i in items if i["overdue"]), start=start,
+                   pre_start_missing=[i["r"]["name"] for i in mandatory if i["plan"]["pre_start"] and i["status"] not in REQ_DONE])
+    summary["pre_start_total"] = sum(1 for i in mandatory if i["plan"]["pre_start"])
     acc = next((i for i in items if i["r"]["kind"] == "accidentabilidad" and i["sub"] and i["sub"]["data"]), None)
     summary["accidents"] = dict(data=acc["sub"]["data"], indices=acc["sub"]["indices"], status=acc["status"]) if acc else None
     return items, summary
 
 
 app.jinja_env.globals.update(REQ_KIND_LABELS=REQ_KIND_LABELS, REQ_STATUS_LABELS=REQ_STATUS_LABELS, REQ_DONE=REQ_DONE,
-                             ACCIDENT_FIELDS=ACCIDENT_FIELDS, can_review_requirements=can_review_requirements)
+                             ACCIDENT_FIELDS=ACCIDENT_FIELDS, can_review_requirements=can_review_requirements, TIMING_LABELS=TIMING_LABELS)
 
 
 def fill_requirement_body(body, provider):
@@ -1748,7 +1792,7 @@ def staff_requirements():
     reqs = db.query("SELECT * FROM requirements WHERE active=1 ORDER BY sort_order, id")
     rows = []
     for p in db.query("SELECT * FROM providers ORDER BY razon_social"):
-        items, summary = provider_requirements(p["id"])
+        items, summary = provider_requirements(p["id"], include_not_applicable=True)
         rows.append(dict(p=p, by_req={i["r"]["id"]: i for i in items}, summary=summary))
     rows.sort(key=lambda r: r["summary"]["pct"])
     queue = db.query("""SELECT s.*, r.name AS req_name, r.kind, p.razon_social FROM requirement_submissions s
@@ -1764,7 +1808,7 @@ def staff_requirements_provider(pid):
     p = db.query("SELECT * FROM providers WHERE id=?", (pid,), one=True)
     if not p:
         abort(404)
-    items, summary = provider_requirements(pid)
+    items, summary = provider_requirements(pid, include_not_applicable=True)
     history = db.query("""SELECT s.*, r.name AS req_name, u.full_name AS reviewed_by_name FROM requirement_submissions s
                           JOIN requirements r ON r.id=s.requirement_id LEFT JOIN users u ON u.id=s.reviewed_by
                           WHERE s.provider_id=? ORDER BY s.submitted_at DESC LIMIT 40""", (pid,))
@@ -1808,14 +1852,21 @@ def requirements_catalog(rid=None):
     current = db.query("SELECT * FROM requirements WHERE id=?", (rid,), one=True) if rid else None
     if rid and not current:
         abort(404)
-    values = dict(current) if current else dict(name="", description="", kind="firma", body="", validity_months=12, mandatory=1, active=1)
+    values = dict(current) if current else dict(name="", description="", kind="firma", body="", validity_months=12, mandatory=1, active=1,
+                                                timing="antes", due_days=10)
     errors = {}
     if request.method == "POST":
         f = request.form
         values = dict(name=(f.get("name") or "").strip()[:120], description=(f.get("description") or "").strip()[:400],
                       kind=f.get("kind"), body=(f.get("body") or "").strip()[:8000],
                       validity_months=f.get("validity_months", type=int), mandatory=1 if f.get("mandatory") == "1" else 0,
-                      active=1 if f.get("active") == "1" else 0)
+                      active=1 if f.get("active") == "1" else 0, timing=f.get("timing"), due_days=f.get("due_days", type=int))
+        if values["timing"] not in TIMING_LABELS:
+            errors["timing"] = "Elegí si se presenta antes o después del inicio de operaciones."
+        if values["due_days"] is None or not 0 <= values["due_days"] <= 365:
+            errors["due_days"] = "Entre 0 y 365 días."
+        if values["timing"] == "antes" and not values["mandatory"]:
+            errors["mandatory"] = "Un requisito previo al inicio tiene que ser obligatorio."
         if not values["name"]:
             errors["name"] = "Ingresá un nombre."
         if values["kind"] not in REQ_KIND_LABELS:
@@ -1828,19 +1879,230 @@ def requirements_catalog(rid=None):
             ts = db.now_iso()
             if current:
                 db.execute("""UPDATE requirements SET name=?, description=?, kind=?, body=?, validity_months=?, mandatory=?, active=?,
-                              updated_at=? WHERE id=?""", (values["name"], values["description"], values["kind"], values["body"],
-                                                           values["validity_months"], values["mandatory"], values["active"], ts, rid))
+                              timing=?, due_days=?, updated_at=? WHERE id=?""",
+                           (values["name"], values["description"], values["kind"], values["body"], values["validity_months"],
+                            values["mandatory"], values["active"], values["timing"], values["due_days"], ts, rid))
             else:
                 order = db.query("SELECT COALESCE(MAX(sort_order), 0) + 10 AS n FROM requirements", one=True)["n"]
                 db.execute("""INSERT INTO requirements (name, description, kind, body, validity_months, mandatory, active, sort_order,
-                              created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                              created_at, updated_at, timing, due_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                            (values["name"], values["description"], values["kind"], values["body"], values["validity_months"],
-                            values["mandatory"], values["active"], order, ts, ts))
+                            values["mandatory"], values["active"], order, ts, ts, values["timing"], values["due_days"]))
             flash(f"Requisito «{values['name']}» guardado.", "success")
             return redirect(url_for("requirements_catalog"))
     catalog = db.query("""SELECT r.*, (SELECT COUNT(DISTINCT provider_id) FROM requirement_submissions s WHERE s.requirement_id=r.id) AS providers
                           FROM requirements r ORDER BY r.active DESC, r.sort_order, r.id""")
-    return render_template("requirements_catalog.html", catalog=catalog, c=values, current=current, errors=errors), (400 if errors else 200)
+    return render_template("requirements_catalog.html", catalog=catalog, c=values, current=current, errors=errors,
+                           thresholds=", ".join(str(t) for t in alert_thresholds()), smtp=smtp_configured()), (400 if errors else 200)
+
+
+@app.post("/equipo/requisitos/alarmas")
+@login_required("admin")
+def alert_settings():
+    raw = request.form.get("thresholds") or ""
+    try:
+        values = sorted({int(x) for x in re.split(r"[,\s;]+", raw) if x.strip()}, reverse=True)
+    except ValueError:
+        values = []
+    if not values or len(values) > 6 or any(not 1 <= v <= 180 for v in values):
+        flash("Indicá entre 1 y 6 umbrales de aviso, en días, entre 1 y 180 (por ejemplo «30, 15, 7, 1»).", "error")
+    else:
+        db.set_setting("alert_thresholds", ", ".join(str(v) for v in values))
+        flash(f"Alarmas actualizadas: se avisa a los proveedores con {', '.join(str(v) for v in values)} días de anticipación.", "success")
+    return redirect(url_for("requirements_catalog") + "#alarmas")
+
+
+# ---- Administrador: requisitos que se le piden a cada proveedor ----
+@app.route("/equipo/requisitos/proveedor/<int:pid>/configurar", methods=["GET", "POST"])
+@login_required("admin")
+def provider_requirements_config(pid):
+    p = db.query("SELECT * FROM providers WHERE id=?", (pid,), one=True)
+    if not p:
+        abort(404)
+    reqs = db.query("SELECT * FROM requirements WHERE active=1 ORDER BY sort_order, id")
+    errors = {}
+    if request.method == "POST":
+        f = request.form
+        start = (f.get("inicio_operaciones") or "").strip()
+        try:
+            start = datetime.strptime(start, "%Y-%m-%d").date().isoformat() if start else None
+        except ValueError:
+            errors["inicio"] = "Ingresá una fecha válida."
+        rows = []
+        for r in reqs:
+            applies = f.get(f"applies_{r['id']}") == "1"
+            timing = f.get(f"timing_{r['id']}")
+            days = f.get(f"days_{r['id']}", type=int)
+            if timing not in TIMING_LABELS:
+                errors[r["id"]] = "Elegí antes o después."
+            elif days is None or not 0 <= days <= 365:
+                errors[r["id"]] = "Entre 0 y 365 días."
+            elif applies and timing == "antes" and not r["mandatory"]:
+                errors[r["id"]] = "Solo los requisitos obligatorios pueden exigirse antes del inicio."
+            rows.append((r, applies, timing, days))
+        if not errors:
+            ts = db.now_iso()
+            db.execute("UPDATE providers SET inicio_operaciones=? WHERE id=?", (start, pid))
+            for r, applies, timing, days in rows:
+                if applies and timing == r["timing"] and days == r["due_days"]:
+                    db.execute("DELETE FROM provider_requirement_settings WHERE provider_id=? AND requirement_id=?", (pid, r["id"]))
+                else:
+                    db.execute("""INSERT INTO provider_requirement_settings (provider_id, requirement_id, applies, timing, due_days, updated_by, updated_at)
+                                  VALUES (?,?,?,?,?,?,?) ON CONFLICT(provider_id, requirement_id) DO UPDATE SET applies=excluded.applies,
+                                  timing=excluded.timing, due_days=excluded.due_days, updated_by=excluded.updated_by, updated_at=excluded.updated_at""",
+                               (pid, r["id"], 1 if applies else 0, timing, days, g.user["id"], ts))
+            generate_alerts(pid)
+            flash(f"Requisitos de {p['razon_social']} actualizados.", "success")
+            return redirect(url_for("staff_requirements_provider", pid=pid))
+        flash("Revisá los campos marcados.", "error")
+    items, summary = provider_requirements(pid, include_not_applicable=True)
+    return render_template("provider_requirements_config.html", p=p, items=items, summary=summary, errors=errors,
+                           form=request.form if request.method == "POST" else None), (400 if errors else 200)
+
+
+# ---------------------------------------------------------------------------
+# Alarmas de vencimiento para el proveedor (en el portal y, si está configurado, por e-mail)
+# ---------------------------------------------------------------------------
+def alert_thresholds():
+    raw = db.get_setting("alert_thresholds", db.ALERT_THRESHOLDS_DEFAULT) or db.ALERT_THRESHOLDS_DEFAULT
+    vals = sorted({int(x) for x in re.split(r"[,\s;]+", raw) if x.strip().isdigit()}, reverse=True)
+    return vals or [30, 15, 7, 1]
+
+
+def _threshold(days, thresholds):
+    """Umbral alcanzado: 'vencido' si ya pasó, el menor umbral que cubre los días restantes, o None si falta mucho."""
+    if days < 0:
+        return "vencido"
+    hits = [t for t in thresholds if days <= t]
+    return min(hits) if hits else None
+
+
+def _in_days(days):
+    return "hoy" if days == 0 else ("mañana" if days == 1 else f"en {days} días")
+
+
+def alert_candidates(provider_id):
+    """Alertas vigentes del proveedor: documentos y requisitos por vencer o vencidos, y plazos de presentación."""
+    ths = alert_thresholds()
+    out = []
+
+    def add(key, days, title, body, link, due):
+        t = _threshold(days, ths)
+        if t is None:
+            return
+        out.append(dict(ref_key=f"{key}:{t}", severity="danger" if days < 0 or days <= 7 else "warn", title=title, body=body,
+                        link=link, due_date=due.isoformat() if hasattr(due, "isoformat") else due, days=days))
+
+    docs, _ = provider_documents(provider_id)
+    for d in docs:
+        if d["vence"] and d["days_left"] is not None:
+            n = d["days_left"]
+            add(f"doc:{d['id']}:{d['vence']}", n, f"{d['nombre']}: {'venció' if n < 0 else 'vence ' + _in_days(n)}",
+                (f"Venció el {d['vence_fmt']}." if n < 0 else f"Vence el {d['vence_fmt']}.")
+                + (" Bloquea el ingreso a yacimiento si no se renueva." if d["bloquea_ingreso"] else "") + " Cargá la renovación.",
+                "/documentacion", d["vence"])
+    items, _ = provider_requirements(provider_id)
+    for i in items:
+        r, plan = i["r"], i["plan"]
+        if i["status"] in ("aprobado", "por_vencer", "vencido") and i["sub"] and i["sub"]["valid_until"]:
+            n = i["days_left"]
+            add(f"req:{r['id']}:{i['sub']['valid_until']}", n, f"{r['name']}: {'venció' if n < 0 else 'vence ' + _in_days(n)}",
+                f"{'Venció' if n < 0 else 'Vence'} el {fmt_fecha(i['sub']['valid_until'] + ' 00:00:00', False)}. Presentalo de nuevo para mantenerlo vigente.",
+                f"/documentacion/requisitos/{r['id']}", i["sub"]["valid_until"])
+        elif i["status"] in ("faltante", "rechazado") and plan["due_date"]:
+            n = i["days_to_due"]
+            when = f"{plan['due_days']} día{'s' if plan['due_days'] != 1 else ''} {'antes' if plan['timing'] == 'antes' else 'después'} del inicio de operaciones"
+            add(f"due:{r['id']}:{plan['due_date'].isoformat()}", n,
+                f"{r['name']}: {'plazo vencido' if n < 0 else 'presentalo ' + _in_days(n)}",
+                f"{'El plazo venció' if n < 0 else 'Tenés plazo hasta'} el {plan['due_date'].strftime('%d/%m/%Y')} ({when})."
+                + (" Es obligatorio para operar." if plan["pre_start"] else ""),
+                f"/documentacion/requisitos/{r['id']}", plan["due_date"])
+    out.sort(key=lambda a: a["days"])
+    return out
+
+
+def smtp_configured():
+    return bool(os.environ.get("PORTAL_SMTP_HOST") and os.environ.get("PORTAL_SMTP_FROM"))
+
+
+def send_alert_email(provider, alerts):
+    """Resumen por e-mail de las alertas nuevas. Devuelve True si se envió."""
+    import smtplib
+    from email.message import EmailMessage
+    to = provider["contacto_email"] or provider["email"]
+    if not smtp_configured() or not to:
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = f"Portal de Proveedores: {len(alerts)} alerta{'s' if len(alerts) > 1 else ''} de documentación"
+    msg["From"] = os.environ["PORTAL_SMTP_FROM"]
+    msg["To"] = to
+    base = os.environ.get("PORTAL_BASE_URL", "").rstrip("/")
+    lines = [f"Hola {provider['contacto_nombre'] or provider['razon_social']}:", "",
+             "Tenés documentación por vencer o con plazo de presentación próximo en el Portal de Proveedores de " + ai.COMPANY + ":", ""]
+    lines += [f"- {a['title']}. {a['body']}" + (f"\n  {base}{a['link']}" if base else "") for a in alerts]
+    lines += ["", "Ingresá al portal, sección Mi documentación, para renovarla.", "", "Este es un mensaje automático."]
+    msg.set_content("\n".join(lines))
+    try:
+        with smtplib.SMTP(os.environ["PORTAL_SMTP_HOST"], int(os.environ.get("PORTAL_SMTP_PORT", "587")), timeout=20) as s:
+            s.starttls()
+            if os.environ.get("PORTAL_SMTP_USER"):
+                s.login(os.environ["PORTAL_SMTP_USER"], os.environ.get("PORTAL_SMTP_PASSWORD", ""))
+            s.send_message(msg)
+        return True
+    except (OSError, smtplib.SMTPException) as exc:
+        logging.getLogger("portal.alerts").warning("No se pudo enviar el e-mail de alertas a %s: %s", to, exc)
+        return False
+
+
+def generate_alerts(provider_id, send_email=False):
+    """Registra las alertas nuevas (una por documento y umbral) y quita las no leídas que ya no aplican."""
+    current = alert_candidates(provider_id)
+    keys = {a["ref_key"] for a in current}
+    ts = db.now_iso()
+    new = []
+    for a in current:
+        cur = db.get_db().execute(
+            """INSERT OR IGNORE INTO provider_alerts (provider_id, ref_key, severity, title, body, link, due_date, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""", (provider_id, a["ref_key"], a["severity"], a["title"], a["body"], a["link"], a["due_date"], ts))
+        if cur.rowcount:
+            new.append(a)
+    stale = [r["id"] for r in db.query("SELECT id, ref_key FROM provider_alerts WHERE provider_id=? AND read_at IS NULL", (provider_id,))
+             if r["ref_key"] not in keys]
+    for sid in stale:
+        db.get_db().execute("DELETE FROM provider_alerts WHERE id=?", (sid,))
+    db.get_db().commit()
+    if send_email and new:
+        provider = db.query("SELECT * FROM providers WHERE id=?", (provider_id,), one=True)
+        if send_alert_email(provider, new):
+            db.execute(f"UPDATE provider_alerts SET emailed_at=? WHERE provider_id=? AND ref_key IN ({','.join('?' * len(new))})",
+                       (db.now_iso(), provider_id, *[a["ref_key"] for a in new]))
+    return current
+
+
+def _alerts_worker():
+    """Revisa una vez por hora a todos los proveedores y envía los e-mails de alertas nuevas."""
+    import time
+    time.sleep(60)
+    while True:
+        try:
+            with app.app_context():
+                for p in db.query("SELECT id FROM providers"):
+                    generate_alerts(p["id"], send_email=True)
+        except Exception:  # noqa: BLE001 - el hilo no debe morir por un error puntual
+            logging.getLogger("portal.alerts").exception("Error revisando alertas")
+        time.sleep(3600)
+
+
+@app.route("/alertas")
+@login_required("provider")
+def provider_alerts():
+    current = generate_alerts(g.user["provider_id"])
+    rows = {r["ref_key"]: r for r in db.query("SELECT * FROM provider_alerts WHERE provider_id=?", (g.user["provider_id"],))}
+    alerts = [dict(a, unread=rows.get(a["ref_key"]) is not None and rows[a["ref_key"]]["read_at"] is None,
+                   emailed=rows.get(a["ref_key"]) is not None and rows[a["ref_key"]]["emailed_at"] is not None) for a in current]
+    db.execute("UPDATE provider_alerts SET read_at=? WHERE provider_id=? AND read_at IS NULL", (db.now_iso(), g.user["provider_id"]))
+    session["alerts_at"] = 0
+    return render_template("alerts.html", alerts=alerts, thresholds=alert_thresholds())
 
 
 # ---------------------------------------------------------------------------
@@ -1881,6 +2143,9 @@ def simple_markdown(text):
 
 db.init_db()
 backfill_attachment_hashes()
+if os.environ.get("PORTAL_ALERTS_WORKER", "1") == "1":
+    import threading
+    threading.Thread(target=_alerts_worker, name="alertas", daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5050"))

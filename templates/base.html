@@ -7,7 +7,7 @@
   <title>{% block title %}Portal de Proveedores{% endblock %} · {{ company }}</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23005da7'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
   <script src="{{ url_for('static', filename='js/theme-init.js') }}?v=3"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=7">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=8">
   <script src="{{ url_for('static', filename='js/app.js') }}?v=4" defer></script>
   {% block head %}{% endblock %}
 </head>
@@ -31,6 +31,8 @@
         <a href="{{ url_for('contracts') }}" {% if ep in ('contracts', 'contract_detail') %}aria-current="page"{% endif %}>{{ icon('contract') }}Mis contratos</a>
         <a href="{{ url_for('documents') }}" {% if ep == 'documents' %}aria-current="page"{% endif %}>{{ icon('shield') }}Mi documentación
           {% if nav_docs_alert %}<span class="count count-warn" aria-label="{{ nav_docs_alert }} documentos o requisitos pendientes">{{ nav_docs_alert }}</span>{% endif %}</a>
+        <a href="{{ url_for('provider_alerts') }}" {% if ep == 'provider_alerts' %}aria-current="page"{% endif %}>{{ icon('alert') }}Alertas
+          {% if nav_alerts and nav_alerts.n %}<span class="count {{ 'count-danger' if nav_alerts.danger else 'count-warn' }}" aria-label="{{ nav_alerts.n }} alerta{{ 's' if nav_alerts.n > 1 }} nueva{{ 's' if nav_alerts.n > 1 }}">{{ nav_alerts.n }}</span>{% endif %}</a>
         <a href="{{ url_for('profile') }}" {% if ep == 'profile' %}aria-current="page"{% endif %}>{{ icon('user') }}Mi perfil</a>
       {% else %}
         <span class="nav-label">Mesa de ayuda</span>
@@ -76,6 +78,11 @@
         <span class="when-light">{{ icon('moon') }}</span><span class="when-dark">{{ icon('sun') }}</span></button>
     </header>
     <main id="main" tabindex="-1">
+      {% if nav_alerts and nav_alerts.n and request.endpoint != 'provider_alerts' %}
+      <div class="alert-notice alert-notice-{{ nav_alert_top.severity }}" role="status">{{ icon('clock') }}
+        <span><strong>{{ nav_alert_top.title }}</strong>{% if nav_alerts.n > 1 %} y {{ nav_alerts.n - 1 }} alerta{{ 's' if nav_alerts.n > 2 }} más{% endif %}.
+          <a href="{{ url_for('provider_alerts') }}">Ver alertas</a></span></div>
+      {% endif %}
       {% if nav_blocks %}
       <div class="block-notice" role="alert">{{ icon('lock') }}
         <span><strong>{{ 'Tu empresa tiene la operación suspendida' if 'Suspensión total' in nav_blocks else 'Tu empresa tiene la operación restringida' }}</strong>

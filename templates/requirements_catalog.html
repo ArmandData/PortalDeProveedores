@@ -15,14 +15,14 @@
       <div class="table-wrap">
         <table class="table table-compact">
           <caption class="sr-only">Requisitos</caption>
-          <thead><tr><th scope="col">Requisito</th><th scope="col">Tipo</th><th scope="col">Vigencia</th><th scope="col" class="num hide-sm">Proveedores</th></tr></thead>
+          <thead><tr><th scope="col">Requisito</th><th scope="col">Tipo</th><th scope="col">Presentación</th><th scope="col" class="num hide-sm">Proveedores</th></tr></thead>
           <tbody>
             {% for r in catalog %}
             <tr class="{% if not r.active %}is-dim{% endif %}" data-href="{{ url_for('requirements_catalog', rid=r.id) }}" {% if current and current.id == r.id %}style="background:var(--primary-soft)"{% endif %}>
               <td><a class="subject" href="{{ url_for('requirements_catalog', rid=r.id) }}">{{ r.name }}</a>
-                <span class="sub">{% if not r.active %}<span class="badge badge-cerrado">Inactivo</span>{% endif %}{% if not r.mandatory %}Opcional · {% endif %}{{ r.description | truncate(90, True, '…') }}</span></td>
+                <span class="sub">{% if not r.active %}<span class="badge badge-cerrado">Inactivo</span>{% endif %}{% if not r.mandatory %}Opcional · {% endif %}{{ 'Vigencia ' ~ r.validity_months ~ ' meses' if r.validity_months else 'Sin vencimiento' }}</span></td>
               <td class="nowrap">{{ REQ_KIND_LABELS[r.kind] }}</td>
-              <td class="nowrap">{{ (r.validity_months ~ ' meses') if r.validity_months else 'Sin vencimiento' }}</td>
+              <td class="nowrap">{% if r.timing == 'antes' %}<span class="tag-prestart">Previo</span> {{ r.due_days }} días antes{% else %}{{ r.due_days }} días después{% endif %}</td>
               <td class="num hide-sm">{{ r.providers }}</td>
             </tr>
             {% endfor %}
@@ -45,14 +45,43 @@
           <div class="field"><label for="c-valid">Vigencia (meses)</label>
             <input class="input" id="c-valid" name="validity_months" type="number" min="1" max="120" value="{{ c.validity_months or '' }}" placeholder="Sin vencimiento">{{ err('validity_months') }}</div>
         </div>
+        <fieldset class="timing-field">
+          <legend>Plazo de presentación respecto del inicio de operaciones</legend>
+          <div class="form-grid">
+            <div class="field"><label for="c-timing">Momento</label>
+              <select class="select" id="c-timing" name="timing">
+                <option value="antes" {% if c.timing == 'antes' %}selected{% endif %}>Antes del inicio (obligatorio para operar)</option>
+                <option value="despues" {% if c.timing == 'despues' %}selected{% endif %}>Después del inicio</option>
+              </select>{{ err('timing') }}</div>
+            <div class="field"><label for="c-days">Días</label>
+              <input class="input" id="c-days" name="due_days" type="number" min="0" max="365" value="{{ c.due_days if c.due_days is not none else '' }}">{{ err('due_days') }}</div>
+          </div>
+          <span class="hint">Es el valor por defecto; se puede cambiar para cada proveedor. Ej.: «10 días antes» vence 10 días antes de la fecha de inicio.</span>
+        </fieldset>
         <div class="field"><label for="c-body">Texto para firmar</label>
           <textarea class="textarea" id="c-body" name="body" maxlength="8000" style="min-height:180px" {% if errors.body %}aria-invalid="true"{% endif %}>{{ c.body }}</textarea>
           <span class="hint">Solo para requisitos «Para firmar». Podés usar {razon_social}, {cuit} y {empresa}; las líneas que empiezan con «- » se muestran como lista.</span>{{ err('body') }}</div>
-        <div class="field"><label class="checkbox"><input type="checkbox" name="mandatory" value="1" {% if c.mandatory %}checked{% endif %}>Obligatorio: cuenta para la completitud</label></div>
+        <div class="field"><label class="checkbox"><input type="checkbox" name="mandatory" value="1" {% if c.mandatory %}checked{% endif %}>Obligatorio: cuenta para la completitud</label>{{ err('mandatory') }}</div>
         <div class="field"><label class="checkbox"><input type="checkbox" name="active" value="1" {% if c.active %}checked{% endif %}>Activo: se les pide a los proveedores</label></div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Guardar</button></div>
       </div>
     </form>
   </div>
+
+  <form class="card" id="alarmas" method="post" action="{{ url_for('alert_settings') }}" style="margin-top:20px">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="card-head"><div><h2>Alarmas para proveedores</h2><p>Avisos antes de que venza un documento, un requisito aprobado o el plazo para presentarlo.</p></div>{{ icon('clock', 'muted') }}</div>
+    <div class="card-body alarm-settings">
+      <div class="field"><label for="a-th">Avisar con estos días de anticipación</label>
+        <input class="input" id="a-th" name="thresholds" value="{{ thresholds }}" placeholder="30, 15, 7, 1">
+        <span class="hint">Separados por coma. El proveedor recibe un aviso al llegar a cada umbral y otro cuando vence. Los de 7 días o menos se muestran en rojo.</span></div>
+      <dl class="dl">
+        <dt>En el portal</dt><dd>{{ icon('check-circle', 'icon-sm') }} Activo: contador en el menú, aviso arriba de la pantalla y sección Alertas.</dd>
+        <dt>Por e-mail</dt><dd>{% if smtp %}{{ icon('check-circle', 'icon-sm') }} Activo: se envía un resumen al contacto del proveedor una vez por hora, solo con las alertas nuevas.
+          {% else %}<span class="muted">No configurado. Para activarlo, definí en Render las variables PORTAL_SMTP_HOST, PORTAL_SMTP_PORT, PORTAL_SMTP_USER, PORTAL_SMTP_PASSWORD, PORTAL_SMTP_FROM y PORTAL_BASE_URL.</span>{% endif %}</dd>
+      </dl>
+      <div class="form-actions"><button class="btn btn-secondary" type="submit">Guardar alarmas</button></div>
+    </div>
+  </form>
 </div>
 {% endblock %}

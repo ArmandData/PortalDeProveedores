@@ -886,3 +886,39 @@ a.tsum[aria-current="true"] { border-color: var(--primary); box-shadow: 0 0 0 1p
 .req-matrix .subject { white-space: normal; }
 @media (max-width: 1360px) { .req-matrix { table-layout: auto; } .req-matrix th:first-child { width: auto; } }
 .req-matrix th.req-col span { hyphens: auto; overflow-wrap: anywhere; }
+
+/* Plazos de requisitos y alarmas */
+.tag-prestart { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; background: var(--primary-soft); color: var(--primary-text); vertical-align: 1px; }
+.timing-field { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px 4px; margin: 0 0 16px; }
+.timing-field legend { font-size: 14px; font-weight: 600; padding: 0 6px; }
+.timing-field .hint { display: block; font-size: 13px; color: var(--text-3); margin: -6px 0 10px; }
+.alarm-settings .dl { margin: 4px 0 12px; }
+.req-dot-overdue { box-shadow: 0 0 0 3px var(--danger-soft), 0 0 0 4px var(--danger); }
+.due-line { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--text-2); margin: -8px 0 16px; flex-wrap: wrap; }
+.nav .count-danger { background: var(--danger); color: #fff; }
+.sidebar .nav .count-danger { background: #ff6b6b; color: #2a0000; }
+.alert-notice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 20px; font-size: 14px; border-bottom: 1px solid var(--border); }
+.alert-notice a { color: inherit; text-decoration: underline; font-weight: 600; margin-left: 4px; }
+.alert-notice-warn { background: var(--warning-soft); color: var(--warning); }
+.alert-notice-danger { background: var(--danger-soft); color: var(--danger); }
+.alert-list { list-style: none; margin: 0; padding: 0; }
+.alert-item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.alert-item:last-child { border-bottom: 0; }
+.alert-item .a-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; }
+.alert-danger .a-icon { background: var(--danger-soft); color: var(--danger); }
+.alert-warn .a-icon { background: var(--warning-soft); color: var(--warning); }
+.alert-item .a-title { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.alert-item .a-body { font-size: 13.5px; color: var(--text-2); margin-top: 2px; }
+.alert-item .a-new { font-size: 11px; font-weight: 700; color: var(--on-primary); background: var(--primary); padding: 1px 6px; border-radius: 4px; }
+.alert-days { font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.alert-danger .alert-days { background: var(--danger-soft); color: var(--danger); }
+.alert-warn .alert-days { background: var(--warning-soft); color: var(--warning); }
+.alert-group { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); padding: 12px 20px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.cfg-table td { vertical-align: middle; }
+.cfg-table .select, .cfg-table .input { min-height: 36px; }
+.cfg-table .cfg-days { width: 84px; }
+.cfg-table tr.is-off td:not(:first-child) { opacity: .45; }
+@media (max-width: 860px) {
+  .alert-item { grid-template-columns: 40px minmax(0, 1fr); }
+  .alert-item .alert-days, .alert-item .btn { grid-column: 2; justify-self: start; }
+}
