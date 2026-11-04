@@ -63,6 +63,20 @@
   }
 }
 
+/* Modo oscuro elegido manualmente con el botón (tiene prioridad sobre el sistema) */
+:root[data-theme="dark"] {
+  --bg: #0f1218; --surface: #161a22; --surface-2: #1b2029; --surface-3: #222833;
+  --border: #2a303c; --border-strong: #3a4250;
+  --text: #e8ebf1; --text-2: #b4bccb; --text-3: #8790a2;
+  --primary: #6b8dff; --primary-hover: #87a3ff; --primary-soft: #1d2747; --primary-text: #a9bfff;
+  --on-primary: #0b1020; --focus: #87a3ff;
+  --success: #4ade80; --success-soft: #11291b; --warning: #f5b452; --warning-soft: #2e2210;
+  --danger: #f87171; --danger-soft: #331618; --info: #60b6f0; --info-soft: #0f2533; --neutral-soft: #232934;
+  --bubble-me: #3c63e0; --bubble-me-text: #fff; --bubble-bot: #1b2029; --bubble-agent: #17233b; --bubble-agent-border: #2b3f66;
+  --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+
 /* ---------- Base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -603,3 +617,17 @@ dialog::backdrop { background: rgba(10, 14, 22, .45); }
 .doc-mini li { display: flex; gap: 10px; align-items: flex-start; }
 .doc-mini li small { display: block; color: var(--text-3); font-size: 12px; }
 .doc-alert-strip { max-width: 780px; margin: 0 auto 10px; }
+
+/* ---------- Selector de tema claro / oscuro ---------- */
+.theme-toggle { display: inline-flex; align-items: center; gap: 8px; }
+.theme-toggle .when-dark { display: none; }
+:root[data-theme="dark"] .theme-toggle .when-dark { display: inline-flex; align-items: center; gap: 8px; }
+:root[data-theme="dark"] .theme-toggle .when-light { display: none; }
+.theme-toggle .when-light { display: inline-flex; align-items: center; gap: 8px; }
+.sidebar-foot .theme-toggle { width: 100%; justify-content: flex-start; margin-bottom: 2px; }
+.topbar .theme-toggle { margin-left: auto; }
+.login-theme { position: fixed; top: 16px; right: 16px; z-index: 50; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+html { transition: none; }
+body, .sidebar, .card, .chat-head, .composer, .conv-pane, .case-pane, .topbar { transition: background-color .2s ease, border-color .2s ease, color .2s ease; }
+:root[data-theme="dark"] .nav .count-warn { color: #1f1500; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nav .count-warn { color: #1f1500; } }
