@@ -100,6 +100,16 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
 - El administrador crea, edita y desactiva tipos; los agentes la ven en solo lectura.
 - Los plazos son internos: el proveedor no ve plazos de respuesta, SLA ni tiempos promedio.
 
+**Requisitos de proveedores** (`/equipo/requisitos`)
+- Catálogo que define el administrador: documentos para firmar (código de ética,
+  confidencialidad, compromiso HSE, conflicto de intereses), para presentar (estados
+  contables, plan anual de HSE) y el ratio de accidentabilidad.
+- El proveedor los ve en **Mi documentación**: firma en línea (nombre, DNI, cargo, fecha e IP)
+  o adjunta el documento firmado, y carga horas hombre, accidentes y días perdidos, con el
+  certificado de la ART. Se calculan los índices de frecuencia y gravedad.
+- Todos los equipos ven la completitud de cada proveedor. Aprueban o rechazan con comentario
+  el administrador, Alta y Documentación de Proveedores y Proveedores y Performance.
+
 **Proveedores y scoring** (`/equipo/proveedores`, solo Proveedores y Performance y el administrador)
 - Evaluaciones periódicas de cada proveedor: calidad (30%), cumplimiento (25%), HSE (25%) y
   documentación (20%), de 1 a 5. Score de 0 a 100 y categoría A (preferente), B (aprobado),

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Requisitos · {{ p.razon_social }}{% endblock %}
+{% block main %}
+<div class="page" style="max-width:1100px">
+  <div class="breadcrumb"><a href="{{ url_for('staff_requirements') }}">Requisitos de proveedores</a>{{ icon('chevron', 'icon-sm') }}<span>{{ p.razon_social }}</span></div>
+  <div class="page-head">
+    <div style="display:flex;gap:14px;align-items:center">{{ avatar(p, 'avatar-lg') }}
+      <div><h1>{{ p.razon_social }}</h1><p><span class="mono">CUIT {{ p.cuit }}</span> · {{ p.rubro or '—' }}</p></div></div>
+    <div class="req-progress"><span class="req-pct">{{ summary.pct }}%</span><span class="req-bar"><i style="width: {{ summary.pct }}%"></i></span>
+      <span class="muted">{{ summary.done }} de {{ summary.total }} completos</span></div>
+  </div>
+
+  {% if summary.accidents %}{% set a = summary.accidents %}
+  <section class="card" style="margin-bottom:20px">
+    <div class="card-head"><div><h2>Accidentabilidad</h2><p>{{ a.data.periodo }} · {{ REQ_STATUS_LABELS[a.status] }}</p></div>{{ icon('shield', 'muted') }}</div>
+    <div class="card-body"><div class="stat-row acc-stats">
+      <div class="stat"><strong class="{{ 't-danger' if a.indices[0] and a.indices[0] >= 20 else ('t-warn' if a.indices[0] and a.indices[0] >= 10 else 't-ok') }}">{{ a.indices[0] }}</strong><span>Índice de frecuencia<br><small>accidentes con baja por millón de horas</small></span></div>
+      <div class="stat"><strong>{{ a.indices[1] }}</strong><span>Índice de gravedad<br><small>días perdidos por mil horas</small></span></div>
+      <div class="stat"><strong>{{ a.data.accidentes }}</strong><span>Accidentes con baja<br><small>{{ '{:,}'.format(a.data.horas_hombre).replace(',', '.') }} horas hombre</small></span></div>
+      <div class="stat"><strong class="{{ 't-danger' if a.data.fatalidades }}">{{ a.data.fatalidades }}</strong><span>Fatales</span></div>
+    </div></div>
+  </section>
+  {% endif %}
+
+  <div class="stack">
+    {% for i in items %}
+    <section class="card req-review req-{{ i.status }}" id="req-{{ i.r.id }}">
+      <div class="card-head">
+        <div><h2>{{ i.r.name }}</h2><p>{{ REQ_KIND_LABELS[i.r.kind] }}{% if not i.r.mandatory %} · Opcional{% endif %}{% if i.r.validity_months %} · Vigencia {{ i.r.validity_months }} meses{% else %} · Sin vencimiento{% endif %}</p></div>
+        <span class="badge badge-req-{{ i.status }}">{{ i.status_label }}</span>
+      </div>
+      {% if i.sub %}{% set s = i.sub %}
+      <div class="card-body">
+        <dl class="dl">
+          <dt>Presentado</dt><dd>{{ s.submitted_at | fecha }}</dd>
+          {% if s.signer_name %}<dt>Firma en línea</dt><dd>{{ s.signer_name }} · DNI {{ s.signer_dni }} · {{ s.signer_role }}{% if s.signer_ip and s.signer_ip != 'firma en línea' %} · IP {{ s.signer_ip }}{% endif %}</dd>{% endif %}
+          {% if s.original_name %}<dt>Archivo</dt><dd>{% if s.stored_name %}<a href="{{ url_for('requirement_file', sid=s.id) }}" target="_blank" rel="noopener">{{ icon('download', 'icon-sm') }} {{ s.original_name }}</a>{% else %}{{ s.original_name }} <span class="muted">(datos de ejemplo)</span>{% endif %}</dd>{% endif %}
+          {% if s.data %}<dt>Datos</dt><dd>{{ s.data.periodo }}: {{ s.data.accidentes }} accidentes con baja, {{ s.data.dias_perdidos }} días perdidos, {{ '{:,}'.format(s.data.horas_hombre).replace(',', '.') }} HH · IF {{ s.indices[0] }} · IG {{ s.indices[1] }}</dd>{% endif %}
+          {% if s.note %}<dt>Comentario</dt><dd>{{ s.note }}</dd>{% endif %}
+          {% if s.reviewed_at %}<dt>Revisión</dt><dd>{{ REQ_STATUS_LABELS[s.status] }} el {{ s.reviewed_at | fecha(False) }}{% if s.reviewed_by_name %} por {{ s.reviewed_by_name }}{% endif %}{% if s.review_comment %}: «{{ s.review_comment }}»{% endif %}</dd>{% endif %}
+          {% if s.valid_until %}<dt>Vigente hasta</dt><dd>{{ s.valid_until | fecha(False) }}</dd>{% endif %}
+        </dl>
+        {% if s.status == 'en_revision' and can_review_requirements() %}
+        <form class="review-form" method="post" action="{{ url_for('staff_requirement_review', sid=s.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <label class="sr-only" for="c-{{ s.id }}">Comentario para el proveedor</label>
+          <input class="input" id="c-{{ s.id }}" name="comment" maxlength="1000" placeholder="Comentario para el proveedor (obligatorio si rechazás)">
+          <div class="review-actions">
+            <button class="btn btn-secondary" type="submit" name="action" value="rechazar">Rechazar</button>
+            <button class="btn btn-primary" type="submit" name="action" value="aprobar">{{ icon('check', 'icon-sm') }}Aprobar</button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="card-body"><p class="muted">El proveedor todavía no lo presentó.</p></div>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

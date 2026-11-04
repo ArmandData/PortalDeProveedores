@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ r.name }}{% endblock %}
+
+{% macro err(key) -%}
+  {% if errors[key] %}<span class="error-text" id="e-{{ key }}">{{ icon('alert', 'icon-sm') }}{{ errors[key] }}</span>{% endif %}
+{%- endmacro %}
+{% macro invalid(key) -%}{% if errors[key] %}aria-invalid="true" aria-describedby="e-{{ key }}"{% endif %}{%- endmacro %}
+
+{% macro file_field(label, hint) %}
+  <div class="field">
+    <label for="f-file">{{ label }} <span aria-hidden="true" style="color:var(--danger)">*</span></label>
+    <input class="input" id="f-file" name="file" type="file" accept="{{ accept }}" required {{ invalid('file') }}>
+    <span class="hint">{{ hint }} PDF, Word o imagen · hasta 15 MB.</span>
+    {{ err('file') }}
+  </div>
+{% endmacro %}
+
+{% block main %}
+<div class="page" style="max-width:960px">
+  <div class="breadcrumb"><a href="{{ url_for('documents') }}#requisitos">Mi documentación</a>{{ icon('chevron', 'icon-sm') }}<span>{{ r.name }}</span></div>
+  <div class="page-head">
+    <div>
+      <h1>{{ r.name }}</h1>
+      <p>{{ r.description }}</p>
+    </div>
+    <span class="badge badge-req-{{ item.status }}" style="font-size:14px">{{ item.status_label }}</span>
+  </div>
+
+  {% if item.status == 'rechazado' %}
+    <div class="alert alert-error" style="margin-bottom:16px" role="alert">{{ icon('alert') }}<span><strong>Hace falta corregirlo.</strong> {{ item.sub.review_comment }}</span></div>
+  {% elif item.status == 'en_revision' %}
+    <div class="alert alert-info" style="margin-bottom:16px">{{ icon('clock') }}<span>Lo recibimos el {{ item.sub.submitted_at | fecha }} y lo está revisando Alta y Documentación de Proveedores. Si lo volvés a presentar, reemplaza al anterior.</span></div>
+  {% elif item.status in ('aprobado', 'por_vencer') %}
+    <div class="alert {{ 'alert-warning' if item.status == 'por_vencer' else 'alert-info' }}" style="margin-bottom:16px">{{ icon('check-circle') }}<span>Aprobado{% if item.sub.valid_until %}, vigente hasta el {{ item.sub.valid_until | fecha(False) }}{% if item.status == 'por_vencer' %}: renovalo antes de esa fecha{% endif %}{% endif %}.</span></div>
+  {% elif item.status == 'vencido' %}
+    <div class="alert alert-error" style="margin-bottom:16px">{{ icon('alert') }}<span>Venció el {{ item.sub.valid_until | fecha(False) }}. Presentalo de nuevo.</span></div>
+  {% endif %}
+
+  {% if r.kind == 'firma' %}
+    <section class="card">
+      <div class="card-head"><div><h2>Documento</h2><p>Leelo completo antes de firmarlo.</p></div>
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('requirement_template', rid=r.id) }}" target="_blank" rel="noopener">{{ icon('download', 'icon-sm') }}Ver para imprimir</a></div>
+      <div class="card-body req-doc">{{ body | md }}</div>
+    </section>
+
+    <div class="req-forms">
+      <form class="card" method="post" action="{{ url_for('requirement_sign', rid=r.id) }}" novalidate>
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="card-head"><div><h2>Firmar en línea</h2><p>Firma la persona autorizada de {{ p.razon_social }}.</p></div></div>
+        <div class="card-body">
+          <div class="field"><label for="s-name">Nombre y apellido</label>
+            <input class="input" id="s-name" name="signer_name" maxlength="120" autocomplete="name" value="{{ values.signer_name or p.contacto_nombre or '' }}" required {{ invalid('signer_name') }}>{{ err('signer_name') }}</div>
+          <div class="form-grid">
+            <div class="field"><label for="s-dni">DNI</label>
+              <input class="input" id="s-dni" name="signer_dni" maxlength="12" inputmode="numeric" placeholder="28.456.112" value="{{ values.signer_dni or '' }}" required {{ invalid('signer_dni') }}>{{ err('signer_dni') }}</div>
+            <div class="field"><label for="s-role">Cargo</label>
+              <input class="input" id="s-role" name="signer_role" maxlength="120" value="{{ values.signer_role or p.contacto_cargo or '' }}" required {{ invalid('signer_role') }}>{{ err('signer_role') }}</div>
+          </div>
+          <div class="field">
+            <label class="checkbox"><input type="checkbox" name="accept" value="1" required {{ invalid('accept') }}>Leí el documento y lo acepto en nombre de {{ p.razon_social }}.</label>
+            {{ err('accept') }}
+          </div>
+          <p class="muted" style="font-size:12.5px;margin-bottom:12px">Se registran tu nombre, DNI, cargo, fecha, hora y dirección IP como constancia de la firma.</p>
+          <button class="btn btn-primary btn-block" type="submit" data-loading-text="Firmando…">{{ icon('check', 'icon-sm') }}Firmar</button>
+        </div>
+      </form>
+
+      <form class="card" method="post" action="{{ url_for('requirement_submit', rid=r.id) }}" enctype="multipart/form-data" novalidate>
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="card-head"><div><h2>O adjuntar firmado</h2><p>Imprimilo, firmalo y subí el escaneo.</p></div></div>
+        <div class="card-body">
+          {{ file_field('Documento firmado', 'Con firma y aclaración del apoderado.') }}
+          <button class="btn btn-secondary btn-block" type="submit" data-loading-text="Subiendo…">{{ icon('upload', 'icon-sm') }}Adjuntar</button>
+        </div>
+      </form>
+    </div>
+
+  {% else %}
+    <form class="card" method="post" action="{{ url_for('requirement_submit', rid=r.id) }}" enctype="multipart/form-data" novalidate>
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <div class="card-head"><div><h2>{{ 'Cargar indicadores' if r.kind == 'accidentabilidad' else 'Presentar documento' }}</h2>
+        <p>{% if r.kind == 'accidentabilidad' %}Datos de los últimos 12 meses de todo tu personal. Calculamos los índices de frecuencia y gravedad.{% else %}{{ r.description }}{% endif %}</p></div></div>
+      <div class="card-body">
+        {% if r.kind == 'accidentabilidad' %}
+          <div class="field"><label for="a-periodo">Período</label>
+            <input class="input" id="a-periodo" name="periodo" maxlength="60" placeholder="Oct 2025 a Sep 2026" value="{{ values.periodo or '' }}" required {{ invalid('periodo') }}>{{ err('periodo') }}</div>
+          <div class="form-grid">
+            {% for key, label, lo, hi in ACCIDENT_FIELDS %}
+            <div class="field"><label for="a-{{ key }}">{{ label }}</label>
+              <input class="input" id="a-{{ key }}" name="{{ key }}" type="number" inputmode="numeric" min="{{ lo }}" step="1" value="{{ values[key] or '' }}" required {{ invalid(key) }}>{{ err(key) }}</div>
+            {% endfor %}
+          </div>
+          {{ file_field('Certificado de siniestralidad de la ART', 'Respalda los datos cargados.') }}
+        {% else %}
+          {{ file_field('Documento', '') }}
+        {% endif %}
+        <div class="field"><label for="f-note">Comentario (opcional)</label>
+          <input class="input" id="f-note" name="note" maxlength="500" value="{{ values.note or '' }}" placeholder="Algo que debamos saber al revisarlo"></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit" data-loading-text="Enviando…">{{ icon('upload', 'icon-sm') }}Presentar</button></div>
+      </div>
+    </form>
+  {% endif %}
+
+  {% if history %}
+  <section class="card" style="margin-top:20px">
+    <div class="card-head"><h2>Presentaciones anteriores</h2></div>
+    <div class="card-body"><ul class="events">
+      {% for h in history %}
+        <li><span><strong>{{ REQ_STATUS_LABELS[h.status] }}</strong> ·
+          {% if h.signer_name %}Firmado en línea por {{ h.signer_name }}{% elif h.stored_name %}<a href="{{ url_for('requirement_file', sid=h.id) }}" target="_blank" rel="noopener">{{ h.original_name }}</a>{% else %}{{ h.original_name or '—' }}{% endif %}
+          {% if h.indices and h.indices[0] is not none %} · Índice de frecuencia {{ h.indices[0] }}{% endif %}
+          {% if h.review_comment %}<br><span class="muted">Observación: {{ h.review_comment }}</span>{% endif %}</span>
+          <time>{{ h.submitted_at | fecha }}</time></li>
+      {% endfor %}
+    </ul></div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

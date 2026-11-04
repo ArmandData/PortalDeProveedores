@@ -162,6 +162,8 @@
           <dt>Eventos HSE</dt><dd>{% if signals.hse %}<span class="t-danger">{{ signals.hse }}</span>{% else %}0{% endif %}</dd>
           <dt>Calidad (QA/QC)</dt><dd>{{ signals.calidad or 0 }}</dd>
           <dt>Reclamos de logística</dt><dd>{{ signals.logistica or 0 }}</dd>
+          <dt>Requisitos</dt><dd><a href="{{ url_for('staff_requirements_provider', pid=p.id) }}">{{ req_summary.done }} de {{ req_summary.total }} ({{ req_summary.pct }}%)</a></dd>
+          {% if req_summary.accidents %}<dt>Accidentabilidad</dt><dd>IF {{ req_summary.accidents.indices[0] }} · IG {{ req_summary.accidents.indices[1] }}<span class="muted" style="display:block;font-size:12.5px">{{ req_summary.accidents.data.periodo }} · {{ REQ_STATUS_LABELS[req_summary.accidents.status] | lower }}</span></dd>{% endif %}
           <dt>Documentación</dt><dd>{% if docs_summary.bloqueantes %}<span class="t-danger">{{ docs_summary.bloqueantes }} vencido{{ 's' if docs_summary.bloqueantes > 1 }} que bloquea{{ 'n' if docs_summary.bloqueantes > 1 }} ingreso</span>{% elif docs_summary.vencido %}{{ docs_summary.vencido }} vencido{{ 's' if docs_summary.vencido > 1 }}{% elif docs_summary.por_vencer %}{{ docs_summary.por_vencer }} por vencer{% else %}Al día{% endif %}</dd>
         </dl>
         <a class="btn btn-ghost btn-sm" style="margin-top:10px" href="{{ url_for('staff_analytics', proveedor=p.id) }}">{{ icon('chart', 'icon-sm') }}Ver en Analítica</a></div>

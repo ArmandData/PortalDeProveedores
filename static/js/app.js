@@ -86,6 +86,9 @@
     // Foto de perfil: enviar al elegir
     $$("[data-upload-on-change]").forEach((input) => input.addEventListener("change", () => { if (input.files.length) input.form.submit(); }));
 
+    // Imprimir (modelos de documentos para firmar)
+    $$("[data-print]").forEach((b) => b.addEventListener("click", () => window.print()));
+
     // Confirmaciones
     $$("[data-confirm]").forEach((el) => el.addEventListener("click", (e) => { if (!confirm(el.dataset.confirm)) e.preventDefault(); }));
 

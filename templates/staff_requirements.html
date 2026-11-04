@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Requisitos de proveedores{% endblock %}
+{% block main %}
+<div class="page" style="max-width:1320px">
+  <div class="page-head">
+    <div>
+      <h1>Requisitos de proveedores</h1>
+      <p>Completitud de los documentos que la empresa pide firmar y presentar a cada proveedor.</p>
+    </div>
+    {% if g.user.role == 'admin' %}<a class="btn btn-secondary" href="{{ url_for('requirements_catalog') }}">{{ icon('note', 'icon-sm') }}Catálogo de requisitos</a>{% endif %}
+  </div>
+
+  {% if queue %}
+  <section class="card" style="margin-bottom:20px">
+    <div class="card-head"><div><h2>Para revisar ({{ queue | length }})</h2>
+      <p>{% if can_review_requirements() %}Presentaciones esperando aprobación, de la más antigua a la más nueva.{% else %}Las revisa Alta y Documentación de Proveedores o Proveedores y Performance.{% endif %}</p></div></div>
+    <div class="table-wrap">
+      <table class="table table-compact">
+        <caption class="sr-only">Presentaciones pendientes de revisión</caption>
+        <thead><tr><th scope="col">Requisito</th><th scope="col">Proveedor</th><th scope="col" class="hide-sm">Presentado</th><th scope="col"><span class="sr-only">Acción</span></th></tr></thead>
+        <tbody>
+          {% for s in queue %}
+          <tr data-href="{{ url_for('staff_requirements_provider', pid=s.provider_id) }}#req-{{ s.requirement_id }}">
+            <td><a class="subject" href="{{ url_for('staff_requirements_provider', pid=s.provider_id) }}#req-{{ s.requirement_id }}">{{ s.req_name }}</a>
+              <span class="sub">{{ REQ_KIND_LABELS[s.kind] }} · {{ 'Firma en línea' if s.signer_name else (s.original_name or '—') }}</span></td>
+            <td>{{ s.razon_social }}</td>
+            <td class="hide-sm nowrap">{{ s.submitted_at | relativa }}</td>
+            <td class="nowrap"><span class="btn btn-ghost btn-sm">{{ 'Revisar' if can_review_requirements() else 'Ver' }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="card-head"><div><h2>Completitud por proveedor</h2><p>Requisitos obligatorios aprobados y vigentes.</p></div></div>
+    <div class="table-wrap">
+      <table class="table req-matrix">
+        <caption class="sr-only">Estado de cada requisito por proveedor</caption>
+        <thead><tr>
+          <th scope="col">Proveedor</th>
+          <th scope="col">Completitud</th>
+          {% for r in reqs %}<th scope="col" class="req-col hide-md" title="{{ r.name }}"><span>{{ r.name }}</span></th>{% endfor %}
+        </tr></thead>
+        <tbody>
+          {% for row in rows %}
+          <tr data-href="{{ url_for('staff_requirements_provider', pid=row.p.id) }}">
+            <td><div style="display:flex;gap:10px;align-items:center">{{ avatar(row.p) }}
+              <div><a class="subject" href="{{ url_for('staff_requirements_provider', pid=row.p.id) }}">{{ row.p.razon_social }}</a><span class="sub mono">{{ row.p.cuit }}</span></div></div></td>
+            <td class="nowrap" data-label="Completitud">
+              <div class="req-progress req-progress-sm"><span class="req-pct">{{ row.summary.pct }}%</span><span class="req-bar"><i style="width: {{ row.summary.pct }}%"></i></span></div>
+              <span class="sub">{{ row.summary.done }} de {{ row.summary.total }}{% if row.summary.en_revision %} · {{ row.summary.en_revision }} en revisión{% endif %}{% if row.summary.pendientes %} · {{ row.summary.pendientes }} pendiente{{ 's' if row.summary.pendientes > 1 }}{% endif %}</span></td>
+            {% for r in reqs %}{% set i = row.by_req[r.id] %}
+              <td class="req-col hide-md"><span class="req-dot req-dot-{{ i.status }}" title="{{ r.name }}: {{ i.status_label }}" aria-label="{{ i.status_label }}"></span></td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="req-legend">
+      {% for k in ('aprobado', 'por_vencer', 'en_revision', 'rechazado', 'vencido', 'faltante') %}<span><span class="req-dot req-dot-{{ k }}" aria-hidden="true"></span>{{ REQ_STATUS_LABELS[k] }}</span>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Catálogo de requisitos{% endblock %}
+{% macro err(key) -%}
+  {% if errors[key] %}<span class="error-text" id="e-{{ key }}">{{ icon('alert', 'icon-sm') }}{{ errors[key] }}</span>{% endif %}
+{%- endmacro %}
+{% block main %}
+<div class="page" style="max-width:1200px">
+  <div class="breadcrumb"><a href="{{ url_for('staff_requirements') }}">Requisitos de proveedores</a>{{ icon('chevron', 'icon-sm') }}<span>Catálogo</span></div>
+  <div class="page-head"><div><h1>Catálogo de requisitos</h1><p>Documentos que se piden a todos los proveedores. Solo el administrador los modifica.</p></div>
+    {% if current %}<a class="btn btn-secondary" href="{{ url_for('requirements_catalog') }}">{{ icon('plus', 'icon-sm') }}Nuevo requisito</a>{% endif %}</div>
+
+  <div class="detail-grid" style="grid-template-columns:minmax(0, 1fr) 440px">
+    <section class="card">
+      <div class="table-wrap">
+        <table class="table table-compact">
+          <caption class="sr-only">Requisitos</caption>
+          <thead><tr><th scope="col">Requisito</th><th scope="col">Tipo</th><th scope="col">Vigencia</th><th scope="col" class="num hide-sm">Proveedores</th></tr></thead>
+          <tbody>
+            {% for r in catalog %}
+            <tr class="{% if not r.active %}is-dim{% endif %}" data-href="{{ url_for('requirements_catalog', rid=r.id) }}" {% if current and current.id == r.id %}style="background:var(--primary-soft)"{% endif %}>
+              <td><a class="subject" href="{{ url_for('requirements_catalog', rid=r.id) }}">{{ r.name }}</a>
+                <span class="sub">{% if not r.active %}<span class="badge badge-cerrado">Inactivo</span>{% endif %}{% if not r.mandatory %}Opcional · {% endif %}{{ r.description | truncate(90, True, '…') }}</span></td>
+              <td class="nowrap">{{ REQ_KIND_LABELS[r.kind] }}</td>
+              <td class="nowrap">{{ (r.validity_months ~ ' meses') if r.validity_months else 'Sin vencimiento' }}</td>
+              <td class="num hide-sm">{{ r.providers }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <form class="card" method="post" novalidate>
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <div class="card-head"><div><h2>{{ 'Editar requisito' if current else 'Nuevo requisito' }}</h2><p>Los cambios se aplican a todos los proveedores.</p></div></div>
+      <div class="card-body">
+        <div class="field"><label for="c-name">Nombre</label>
+          <input class="input" id="c-name" name="name" maxlength="120" value="{{ c.name }}" required {% if errors.name %}aria-invalid="true"{% endif %}>{{ err('name') }}</div>
+        <div class="field"><label for="c-desc">Descripción</label>
+          <textarea class="textarea" id="c-desc" name="description" maxlength="400" style="min-height:64px">{{ c.description }}</textarea></div>
+        <div class="form-grid">
+          <div class="field"><label for="c-kind">Tipo</label>
+            <select class="select" id="c-kind" name="kind">{% for k, v in REQ_KIND_LABELS.items() %}<option value="{{ k }}" {% if c.kind == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>{{ err('kind') }}</div>
+          <div class="field"><label for="c-valid">Vigencia (meses)</label>
+            <input class="input" id="c-valid" name="validity_months" type="number" min="1" max="120" value="{{ c.validity_months or '' }}" placeholder="Sin vencimiento">{{ err('validity_months') }}</div>
+        </div>
+        <div class="field"><label for="c-body">Texto para firmar</label>
+          <textarea class="textarea" id="c-body" name="body" maxlength="8000" style="min-height:180px" {% if errors.body %}aria-invalid="true"{% endif %}>{{ c.body }}</textarea>
+          <span class="hint">Solo para requisitos «Para firmar». Podés usar {razon_social}, {cuit} y {empresa}; las líneas que empiezan con «- » se muestran como lista.</span>{{ err('body') }}</div>
+        <div class="field"><label class="checkbox"><input type="checkbox" name="mandatory" value="1" {% if c.mandatory %}checked{% endif %}>Obligatorio: cuenta para la completitud</label></div>
+        <div class="field"><label class="checkbox"><input type="checkbox" name="active" value="1" {% if c.active %}checked{% endif %}>Activo: se les pide a los proveedores</label></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Guardar</button></div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

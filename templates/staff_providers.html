@@ -30,6 +30,7 @@
           <th scope="col">Proveedor</th>
           <th scope="col">Score</th>
           <th scope="col">Estado para operar</th>
+          <th scope="col" class="hide-sm">Requisitos</th>
           <th scope="col" class="hide-sm">Última evaluación</th>
           <th scope="col" class="num hide-md" title="Tickets abiertos">Abiertos</th>
         </tr></thead>
@@ -45,6 +46,8 @@
             <td data-label="Estado">{{ standing_badge(r.st) }}
               {% set n = r.st.blocks | length + r.st.auto_blocks | length %}
               {% if n %}<span class="sub">{{ (r.st.blocks + r.st.auto_blocks) | map(attribute='label') | join(' · ') }}</span>{% endif %}</td>
+            <td class="hide-sm nowrap"><div class="req-progress req-progress-sm"><span class="req-pct">{{ r.req.pct }}%</span><span class="req-bar"><i style="width: {{ r.req.pct }}%"></i></span></div>
+              <span class="sub">{{ r.req.done }} de {{ r.req.total }}</span></td>
             <td class="hide-sm nowrap">{% if r.st.last %}{{ r.st.last.period }}<span class="sub">{{ r.st.last.created_at | fecha(False) }}</span>{% else %}<span class="muted">Sin evaluar</span>{% endif %}</td>
             <td class="num hide-md">{{ r.open_tickets }}</td>
           </tr>

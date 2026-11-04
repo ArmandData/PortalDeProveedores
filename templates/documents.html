@@ -6,11 +6,43 @@
   <div class="page-head">
     <div>
       <h1>Mi documentación</h1>
-      <p>Seguros, habilitaciones y certificaciones exigidas para operar e ingresar a yacimiento.</p>
+      <p>Requisitos de la empresa para firmar y presentar, y seguros, habilitaciones y certificaciones exigidas para operar e ingresar a yacimiento.</p>
     </div>
     <a class="btn btn-primary" href="{{ url_for('assistant', sin_contrato=1, texto='Adjunto documentación actualizada para validar: ') }}">{{ icon('upload', 'icon-sm') }}Cargar documentación</a>
   </div>
 
+  <section class="card req-card" id="requisitos" aria-labelledby="req-title">
+    <div class="card-head">
+      <div><h2 id="req-title">Requisitos de la empresa</h2>
+        <p>Documentos que necesitamos que firmes o nos presentes. Los revisa Alta y Documentación de Proveedores.</p></div>
+      <div class="req-progress" role="img" aria-label="{{ req_summary.done }} de {{ req_summary.total }} requisitos completos">
+        <span class="req-pct">{{ req_summary.pct }}%</span>
+        <span class="req-bar"><i style="width: {{ req_summary.pct }}%"></i></span>
+        <span class="muted">{{ req_summary.done }} de {{ req_summary.total }} completos{% if req_summary.en_revision %} · {{ req_summary.en_revision }} en revisión{% endif %}</span>
+      </div>
+    </div>
+    {% if req_summary.rechazados %}
+      <div class="alert alert-error" style="margin:14px 20px 0">{{ icon('alert') }}<span>Tenés {{ req_summary.rechazados }} requisito{{ 's' if req_summary.rechazados > 1 }} con observaciones. Abrilo para ver qué corregir y volvé a presentarlo.</span></div>
+    {% endif %}
+    <ul class="req-list" role="list">
+      {% for i in reqs %}
+      <li class="req-item req-{{ i.status }}">
+        <span class="req-icon" aria-hidden="true">{{ icon({'firma': 'note', 'presentacion': 'upload', 'accidentabilidad': 'shield'}[i.r.kind]) }}</span>
+        <div class="req-text">
+          <a class="req-name" href="{{ url_for('requirement_detail', rid=i.r.id) }}">{{ i.r.name }}</a>
+          <span class="req-meta">{{ REQ_KIND_LABELS[i.r.kind] }}{% if not i.r.mandatory %} · Opcional{% endif %}
+            {% if i.status in ('aprobado', 'por_vencer') and i.sub.valid_until %} · Vigente hasta {{ i.sub.valid_until | fecha(False) }}{% elif i.status == 'vencido' %} · Venció el {{ i.sub.valid_until | fecha(False) }}{% endif %}
+            {% if i.status == 'rechazado' and i.sub.review_comment %}<span class="req-obs">Observación: {{ i.sub.review_comment }}</span>{% endif %}</span>
+        </div>
+        <span class="badge badge-req-{{ i.status }}">{{ i.status_label }}</span>
+        <a class="btn btn-sm {{ 'btn-primary' if i.status in ('faltante', 'rechazado', 'vencido') else 'btn-ghost' }}" href="{{ url_for('requirement_detail', rid=i.r.id) }}">
+          {% if i.status in ('faltante', 'rechazado', 'vencido') %}{{ 'Firmar' if i.r.kind == 'firma' else 'Presentar' }}{% else %}Ver{% endif %}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <h2 class="section-title">Seguros y habilitaciones</h2>
   {% if summary.bloqueantes %}
     <div class="alert alert-error" role="alert" style="margin-bottom:16px">{{ icon('alert') }}
       <span><strong>Ingreso a yacimiento bloqueado.</strong> Tenés {{ summary.bloqueantes }} documento{{ 's' if summary.bloqueantes > 1 }} obligatorio{{ 's' if summary.bloqueantes > 1 }} vencido{{ 's' if summary.bloqueantes > 1 }}. Cargá la renovación para que Alta y Documentación de Proveedores la valide.</span></div>

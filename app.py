@@ -1,6 +1,7 @@
 """Portal de Proveedores — consultas y reclamos con asistente IA y ticketera."""
 import functools
 import hashlib
+import json
 import logging
 import os
 import re
@@ -294,7 +295,8 @@ def inject_nav():
         ctx["nav_blocks"] = [BLOCK_KINDS[b["kind"]][0] for b in db.query(
             "SELECT kind FROM provider_blocks WHERE provider_id=? AND lifted_at IS NULL ORDER BY kind DESC", (g.user["provider_id"],))]
         _, docs_summary = provider_documents(g.user["provider_id"])
-        ctx["nav_docs_alert"] = docs_summary["vencido"] + docs_summary["por_vencer"]
+        _, req_summary = provider_requirements(g.user["provider_id"])
+        ctx["nav_docs_alert"] = docs_summary["vencido"] + docs_summary["por_vencer"] + req_summary["pendientes"]
         ctx["nav_docs_summary"] = docs_summary
     elif g.get("user"):
         ctx["nav_team"] = db.query("SELECT * FROM teams WHERE id=?", (g.user["team_id"],), one=True) if g.user["team_id"] else None
@@ -302,6 +304,10 @@ def inject_nav():
             f"SELECT COUNT(*) AS n FROM tickets WHERE status IN ({','.join('?' * len(OPEN_STATUSES))})"
             + (" AND team_id=?" if g.user["team_id"] else ""),
             (*OPEN_STATUSES, *([g.user["team_id"]] if g.user["team_id"] else [])), one=True)["n"]
+        ctx["nav_req_review"] = db.query(
+            """SELECT COUNT(*) AS n FROM requirement_submissions WHERE status='en_revision'
+               AND id IN (SELECT MAX(id) FROM requirement_submissions GROUP BY provider_id, requirement_id)""", one=True)["n"] \
+            if can_review_requirements() else 0
     return ctx
 
 
@@ -812,7 +818,9 @@ def documents():
     items, summary = provider_documents(g.user["provider_id"])
     status = request.args.get("estado", "")
     shown = [d for d in items if d["status"] == status] if status in DOC_STATUS_LABELS else items
-    return render_template("documents.html", docs=shown, summary=summary, total=len(items), status=status)
+    reqs, req_summary = provider_requirements(g.user["provider_id"])
+    return render_template("documents.html", docs=shown, summary=summary, total=len(items), status=status,
+                           reqs=reqs, req_summary=req_summary)
 
 
 # ---------------------------------------------------------------------------
@@ -1169,8 +1177,9 @@ def staff_ticket_detail(code):
     contract = own_contract(t["contract_id"], t["provider_id"]) if t["contract_id"] else None
     docs, docs_summary = provider_documents(t["provider_id"])
     standing = provider_standing(t["provider_id"], docs_summary)
+    _, req_summary = provider_requirements(t["provider_id"])
     return render_template("staff_ticket.html", t=t, p=provider, messages=messages, events=events, agents=agents,
-                           teams=teams, contract=contract, docs=docs, docs_summary=docs_summary, standing=standing,
+                           teams=teams, contract=contract, docs=docs, docs_summary=docs_summary, standing=standing, req_summary=req_summary,
                            accept=",".join("." + e for e in extract.ALLOWED))
 
 
@@ -1428,7 +1437,7 @@ def staff_providers():
     rows = []
     for p in db.query("SELECT * FROM providers ORDER BY razon_social"):
         st = provider_standing(p["id"])
-        rows.append(dict(p=p, st=st, open_tickets=db.query(
+        rows.append(dict(p=p, st=st, req=provider_requirements(p["id"])[1], open_tickets=db.query(
             f"SELECT COUNT(*) AS n FROM tickets WHERE provider_id=? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
             (p["id"], *OPEN_STATUSES), one=True)["n"]))
     order = {"bloqueado": 0, "restringido": 1, "habilitado": 2}
@@ -1462,7 +1471,8 @@ def staff_provider_detail(pid, form_errors=None, form_values=None):
     contracts = db.query("SELECT COUNT(*) AS n FROM contracts WHERE provider_id=? AND estado IN ('vigente','por_vencer')", (pid,), one=True)["n"]
     values = form_values or dict(period="", comment="", calidad=None, cumplimiento=None, hse=None,
                                  documentacion=doc_score_suggestion(docs_summary))
-    return render_template("staff_provider.html", p=p, st=st, docs_summary=docs_summary, evaluations=evaluations,
+    _, req_summary = provider_requirements(pid)
+    return render_template("staff_provider.html", p=p, st=st, docs_summary=docs_summary, evaluations=evaluations, req_summary=req_summary,
                            history=history, signals=signals, contracts=contracts, values=values,
                            errors=form_errors or {}, doc_suggestion=doc_score_suggestion(docs_summary))
 
@@ -1529,6 +1539,301 @@ def staff_provider_unblock(pid, bid):
                    (db.now_iso(), g.user["id"], reason, bid))
         flash(f"Bloqueo levantado: {BLOCK_KINDS[b['kind']][0]}.", "success")
     return redirect(url_for("staff_provider_detail", pid=pid) + "#bloqueos")
+
+
+# ---------------------------------------------------------------------------
+# Requisitos de la empresa: documentos para firmar o presentar
+# ---------------------------------------------------------------------------
+REQ_KIND_LABELS = {"firma": "Para firmar", "presentacion": "Para presentar", "accidentabilidad": "Indicador HSE"}
+REQ_STATUS_LABELS = {"faltante": "Pendiente", "en_revision": "En revisión", "aprobado": "Aprobado", "por_vencer": "Por vencer",
+                     "rechazado": "Rechazado", "vencido": "Vencido"}
+REQ_DONE = ("aprobado", "por_vencer")
+REVIEWER_SLUGS = ("maestro", PERFORMANCE_SLUG)
+ACCIDENT_FIELDS = [("horas_hombre", "Horas hombre trabajadas", 1, 1_000_000_000), ("accidentes", "Accidentes con baja", 0, 100_000),
+                   ("dias_perdidos", "Días perdidos por accidentes", 0, 1_000_000), ("fatalidades", "Accidentes fatales", 0, 10_000)]
+
+
+def can_review_requirements():
+    if not g.get("user") or g.user["role"] == "provider":
+        return False
+    if g.user["role"] == "admin":
+        return True
+    team = db.query("SELECT slug FROM teams WHERE id=?", (g.user["team_id"],), one=True) if g.user["team_id"] else None
+    return team is not None and team["slug"] in REVIEWER_SLUGS
+
+
+def _submission_view(sub):
+    d = dict(sub)
+    d["data"] = json.loads(sub["data"]) if sub["data"] else None
+    d["indices"] = db.accident_indices(d["data"]) if d["data"] else (None, None)
+    return d
+
+
+def provider_requirements(provider_id):
+    """Estado de cada requisito activo para el proveedor (según su última presentación) y resumen de completitud."""
+    today = datetime.now().date()
+    reqs = db.query("SELECT * FROM requirements WHERE active=1 ORDER BY sort_order, id")
+    latest = {r["requirement_id"]: r for r in db.query(
+        """SELECT s.*, u.full_name AS reviewed_by_name FROM requirement_submissions s LEFT JOIN users u ON u.id=s.reviewed_by
+           WHERE s.provider_id=? AND s.id IN (SELECT MAX(id) FROM requirement_submissions WHERE provider_id=? GROUP BY requirement_id)""",
+        (provider_id, provider_id))}
+    items = []
+    for r in reqs:
+        sub = latest.get(r["id"])
+        status, days_left = "faltante", None
+        if sub:
+            status = sub["status"]
+            if status == "aprobado" and sub["valid_until"]:
+                days_left = (datetime.fromisoformat(sub["valid_until"]).date() - today).days
+                status = "vencido" if days_left < 0 else ("por_vencer" if days_left <= 30 else "aprobado")
+        items.append(dict(r=r, sub=_submission_view(sub) if sub else None, status=status, status_label=REQ_STATUS_LABELS[status],
+                          days_left=days_left))
+    mandatory = [i for i in items if i["r"]["mandatory"]]
+    done = sum(1 for i in mandatory if i["status"] in REQ_DONE)
+    summary = dict(total=len(mandatory), done=done, pct=round(100 * done / len(mandatory)) if mandatory else 100,
+                   en_revision=sum(1 for i in items if i["status"] == "en_revision"),
+                   pendientes=sum(1 for i in mandatory if i["status"] in ("faltante", "rechazado", "vencido")),
+                   rechazados=sum(1 for i in items if i["status"] == "rechazado"))
+    acc = next((i for i in items if i["r"]["kind"] == "accidentabilidad" and i["sub"] and i["sub"]["data"]), None)
+    summary["accidents"] = dict(data=acc["sub"]["data"], indices=acc["sub"]["indices"], status=acc["status"]) if acc else None
+    return items, summary
+
+
+app.jinja_env.globals.update(REQ_KIND_LABELS=REQ_KIND_LABELS, REQ_STATUS_LABELS=REQ_STATUS_LABELS, REQ_DONE=REQ_DONE,
+                             ACCIDENT_FIELDS=ACCIDENT_FIELDS, can_review_requirements=can_review_requirements)
+
+
+def fill_requirement_body(body, provider):
+    return (body or "").replace("{razon_social}", provider["razon_social"]).replace("{cuit}", provider["cuit"]) \
+        .replace("{empresa}", ai.COMPANY)
+
+
+def own_requirement(rid):
+    r = db.query("SELECT * FROM requirements WHERE id=? AND active=1", (rid,), one=True)
+    if not r:
+        abort(404)
+    return r
+
+
+def read_single_upload(field="file"):
+    """Un archivo opcional del formulario. Devuelve (dict o None, error)."""
+    f = request.files.get(field)
+    if not f or not f.filename:
+        return None, None
+    name = secure_filename(f.filename) or "archivo"
+    display = re.sub(r"[^\w\s.\-()áéíóúñÁÉÍÓÚÑüÜ]", "_", f.filename)[:150]
+    data = f.read()
+    ok, err = extract.validate(name, data)
+    if not ok:
+        return None, f"«{display}»: {err}"
+    mime, _ = extract.ALLOWED[extract.extension(name)]
+    stored = f"req_{uuid.uuid4().hex}.{extract.extension(name)}"
+    return dict(original_name=display, data=data, mime=mime, size=len(data), stored_name=stored), None
+
+
+def store_upload(up):
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    with open(os.path.join(UPLOAD_DIR, up["stored_name"]), "wb") as fh:
+        fh.write(up["data"])
+
+
+@app.route("/documentacion/requisitos/<int:rid>")
+@login_required("provider")
+def requirement_detail(rid, errors=None, values=None):
+    r = own_requirement(rid)
+    provider = current_provider()
+    items, _ = provider_requirements(provider["id"])
+    item = next(i for i in items if i["r"]["id"] == rid)
+    history = [_submission_view(s) for s in db.query(
+        "SELECT * FROM requirement_submissions WHERE provider_id=? AND requirement_id=? ORDER BY id DESC", (provider["id"], rid))]
+    return render_template("requirement.html", r=r, item=item, history=history, body=fill_requirement_body(r["body"], provider),
+                           p=provider, errors=errors or {}, values=values or {},
+                           accept=",".join("." + e for e in extract.ALLOWED))
+
+
+@app.route("/documentacion/requisitos/<int:rid>/modelo")
+@login_required("provider")
+def requirement_template(rid):
+    r = own_requirement(rid)
+    if r["kind"] != "firma":
+        abort(404)
+    provider = current_provider()
+    return render_template("requirement_print.html", r=r, p=provider, body=fill_requirement_body(r["body"], provider),
+                           today=datetime.now())
+
+
+@app.post("/documentacion/requisitos/<int:rid>/firmar")
+@login_required("provider")
+def requirement_sign(rid):
+    r = own_requirement(rid)
+    if r["kind"] != "firma":
+        abort(404)
+    f = request.form
+    values = {k: (f.get(k) or "").strip()[:120] for k in ("signer_name", "signer_dni", "signer_role")}
+    errors = {}
+    if len(values["signer_name"]) < 3:
+        errors["signer_name"] = "Escribí tu nombre y apellido."
+    if not re.fullmatch(r"\d{1,2}\.?\d{3}\.?\d{3}", values["signer_dni"]):
+        errors["signer_dni"] = "Ingresá un DNI válido (7 u 8 dígitos)."
+    if not values["signer_role"]:
+        errors["signer_role"] = "Indicá tu cargo en la empresa."
+    if f.get("accept") != "1":
+        errors["accept"] = "Tenés que confirmar que leíste y aceptás el documento."
+    if errors:
+        return requirement_detail(rid, errors=errors, values=values), 400
+    db.execute("""INSERT INTO requirement_submissions (provider_id, requirement_id, status, signer_name, signer_dni, signer_role,
+                  signer_ip, submitted_by, submitted_at) VALUES (?,?,?,?,?,?,?,?,?)""",
+               (g.user["provider_id"], rid, "en_revision", values["signer_name"], values["signer_dni"], values["signer_role"],
+                request.remote_addr or "", g.user["id"], db.now_iso()))
+    flash(f"Firmaste «{r['name']}». Lo revisa Alta y Documentación de Proveedores.", "success")
+    return redirect(url_for("documents") + "#requisitos")
+
+
+@app.post("/documentacion/requisitos/<int:rid>/presentar")
+@login_required("provider")
+def requirement_submit(rid):
+    r = own_requirement(rid)
+    up, err = read_single_upload()
+    errors, values, data = {}, {k: request.form.get(k, "") for k, *_ in ACCIDENT_FIELDS}, None
+    values["periodo"] = (request.form.get("periodo") or "").strip()[:60]
+    values["note"] = (request.form.get("note") or "").strip()[:500]
+    if err:
+        errors["file"] = err
+    elif not up:
+        errors["file"] = "Adjuntá el documento firmado." if r["kind"] == "firma" else "Adjuntá el documento."
+    if r["kind"] == "accidentabilidad":
+        data = {"periodo": values["periodo"]}
+        if not values["periodo"]:
+            errors["periodo"] = "Indicá el período (por ejemplo «Oct 2025 a Sep 2026»)."
+        for key, label, lo, hi in ACCIDENT_FIELDS:
+            v = request.form.get(key, type=int)
+            if v is None or not lo <= v <= hi:
+                errors[key] = f"Ingresá un número entero entre {lo} y {hi:,}".replace(",", ".") + "."
+            data[key] = v
+        if not errors and data["accidentes"] < data["fatalidades"]:
+            errors["fatalidades"] = "Los accidentes fatales no pueden superar a los accidentes con baja."
+    if errors:
+        return requirement_detail(rid, errors=errors, values=values), 400
+    store_upload(up)
+    db.execute("""INSERT INTO requirement_submissions (provider_id, requirement_id, status, original_name, stored_name, mime, size,
+                  data, note, submitted_by, submitted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               (g.user["provider_id"], rid, "en_revision", up["original_name"], up["stored_name"], up["mime"], up["size"],
+                json.dumps(data) if data else None, values["note"], g.user["id"], db.now_iso()))
+    flash(f"Recibimos «{r['name']}». Te avisamos acá si hace falta corregir algo.", "success")
+    return redirect(url_for("documents") + "#requisitos")
+
+
+@app.get("/requisitos/archivo/<int:sid>")
+@login_required()
+def requirement_file(sid):
+    s_ = db.query("SELECT * FROM requirement_submissions WHERE id=?", (sid,), one=True)
+    if not s_ or not s_["stored_name"] or (g.user["role"] == "provider" and s_["provider_id"] != g.user["provider_id"]):
+        abort(404)
+    inline = s_["mime"].startswith("image/") or s_["mime"] == "application/pdf"
+    return send_from_directory(UPLOAD_DIR, s_["stored_name"], mimetype=s_["mime"], as_attachment=not inline,
+                               download_name=s_["original_name"])
+
+
+# ---- Equipos: completitud y revisión ----
+@app.route("/equipo/requisitos")
+@login_required("agent", "admin")
+def staff_requirements():
+    reqs = db.query("SELECT * FROM requirements WHERE active=1 ORDER BY sort_order, id")
+    rows = []
+    for p in db.query("SELECT * FROM providers ORDER BY razon_social"):
+        items, summary = provider_requirements(p["id"])
+        rows.append(dict(p=p, by_req={i["r"]["id"]: i for i in items}, summary=summary))
+    rows.sort(key=lambda r: r["summary"]["pct"])
+    queue = db.query("""SELECT s.*, r.name AS req_name, r.kind, p.razon_social FROM requirement_submissions s
+                        JOIN requirements r ON r.id=s.requirement_id JOIN providers p ON p.id=s.provider_id
+                        WHERE s.status='en_revision' AND s.id IN (SELECT MAX(id) FROM requirement_submissions GROUP BY provider_id, requirement_id)
+                        ORDER BY s.submitted_at""")
+    return render_template("staff_requirements.html", reqs=reqs, rows=rows, queue=queue)
+
+
+@app.route("/equipo/requisitos/proveedor/<int:pid>")
+@login_required("agent", "admin")
+def staff_requirements_provider(pid):
+    p = db.query("SELECT * FROM providers WHERE id=?", (pid,), one=True)
+    if not p:
+        abort(404)
+    items, summary = provider_requirements(pid)
+    history = db.query("""SELECT s.*, r.name AS req_name, u.full_name AS reviewed_by_name FROM requirement_submissions s
+                          JOIN requirements r ON r.id=s.requirement_id LEFT JOIN users u ON u.id=s.reviewed_by
+                          WHERE s.provider_id=? ORDER BY s.submitted_at DESC LIMIT 40""", (pid,))
+    return render_template("staff_requirements_provider.html", p=p, items=items, summary=summary, history=history)
+
+
+@app.post("/equipo/requisitos/presentaciones/<int:sid>/revisar")
+@login_required("agent", "admin")
+def staff_requirement_review(sid):
+    if not can_review_requirements():
+        abort(403)
+    sub = db.query("""SELECT s.*, r.validity_months, r.name FROM requirement_submissions s JOIN requirements r ON r.id=s.requirement_id
+                      WHERE s.id=?""", (sid,), one=True)
+    if not sub:
+        abort(404)
+    action = request.form.get("action")
+    comment = (request.form.get("comment") or "").strip()[:1000]
+    back = url_for("staff_requirements_provider", pid=sub["provider_id"])
+    if sub["status"] != "en_revision":
+        flash("Esta presentación ya fue revisada.", "error")
+        return redirect(back)
+    if action == "rechazar" and not comment:
+        flash("Para rechazar, explicá qué tiene que corregir el proveedor.", "error")
+        return redirect(back + f"#req-{sub['requirement_id']}")
+    if action not in ("aprobar", "rechazar"):
+        abort(400)
+    valid = None
+    if action == "aprobar" and sub["validity_months"]:
+        valid = (datetime.now() + timedelta(days=30 * sub["validity_months"])).date().isoformat()
+    db.execute("UPDATE requirement_submissions SET status=?, reviewed_by=?, reviewed_at=?, review_comment=?, valid_until=? WHERE id=?",
+               ("aprobado" if action == "aprobar" else "rechazado", g.user["id"], db.now_iso(), comment or None, valid, sid))
+    flash(f"«{sub['name']}» {'aprobado' if action == 'aprobar' else 'rechazado: el proveedor verá tu comentario'}.", "success")
+    return redirect(back)
+
+
+# ---- Administrador: catálogo de requisitos ----
+@app.route("/equipo/requisitos/catalogo", methods=["GET", "POST"])
+@app.route("/equipo/requisitos/catalogo/<int:rid>", methods=["GET", "POST"])
+@login_required("admin")
+def requirements_catalog(rid=None):
+    current = db.query("SELECT * FROM requirements WHERE id=?", (rid,), one=True) if rid else None
+    if rid and not current:
+        abort(404)
+    values = dict(current) if current else dict(name="", description="", kind="firma", body="", validity_months=12, mandatory=1, active=1)
+    errors = {}
+    if request.method == "POST":
+        f = request.form
+        values = dict(name=(f.get("name") or "").strip()[:120], description=(f.get("description") or "").strip()[:400],
+                      kind=f.get("kind"), body=(f.get("body") or "").strip()[:8000],
+                      validity_months=f.get("validity_months", type=int), mandatory=1 if f.get("mandatory") == "1" else 0,
+                      active=1 if f.get("active") == "1" else 0)
+        if not values["name"]:
+            errors["name"] = "Ingresá un nombre."
+        if values["kind"] not in REQ_KIND_LABELS:
+            errors["kind"] = "Elegí el tipo de requisito."
+        if values["kind"] == "firma" and len(values["body"]) < 40:
+            errors["body"] = "Escribí el texto que el proveedor va a firmar."
+        if values["validity_months"] is not None and not 1 <= values["validity_months"] <= 120:
+            errors["validity_months"] = "Entre 1 y 120 meses, o vacío si no vence."
+        if not errors:
+            ts = db.now_iso()
+            if current:
+                db.execute("""UPDATE requirements SET name=?, description=?, kind=?, body=?, validity_months=?, mandatory=?, active=?,
+                              updated_at=? WHERE id=?""", (values["name"], values["description"], values["kind"], values["body"],
+                                                           values["validity_months"], values["mandatory"], values["active"], ts, rid))
+            else:
+                order = db.query("SELECT COALESCE(MAX(sort_order), 0) + 10 AS n FROM requirements", one=True)["n"]
+                db.execute("""INSERT INTO requirements (name, description, kind, body, validity_months, mandatory, active, sort_order,
+                              created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                           (values["name"], values["description"], values["kind"], values["body"], values["validity_months"],
+                            values["mandatory"], values["active"], order, ts, ts))
+            flash(f"Requisito «{values['name']}» guardado.", "success")
+            return redirect(url_for("requirements_catalog"))
+    catalog = db.query("""SELECT r.*, (SELECT COUNT(DISTINCT provider_id) FROM requirement_submissions s WHERE s.requirement_id=r.id) AS providers
+                          FROM requirements r ORDER BY r.active DESC, r.sort_order, r.id""")
+    return render_template("requirements_catalog.html", catalog=catalog, c=values, current=current, errors=errors), (400 if errors else 200)
 
 
 # ---------------------------------------------------------------------------

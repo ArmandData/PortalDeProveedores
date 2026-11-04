@@ -48,6 +48,7 @@ KNOWLEDGE_BASE = """
 - Retenciones: IVA, Ganancias, Ingresos Brutos (Convenio Multilateral cuando corresponde) y regímenes provinciales. Los certificados de retención se emiten con cada orden de pago.
 - Ingreso a yacimiento: para que el personal, vehículos y equipos del proveedor ingresen a locación deben estar vigentes: ART con nómina, póliza de responsabilidad civil, seguro de flota y equipos, inducción HSE del personal, habilitaciones de equipos (izaje, etc.) y revisión técnica de vehículos. Con documentación obligatoria vencida se bloquea el ingreso. Las renovaciones se cargan por este portal y las valida Alta y Documentación de Proveedores.
 - HSE: todo incidente, accidente, casi accidente, derrame o evento ambiental en locación se reporta de inmediato al supervisor de la operadora en el sitio y por la línea de emergencias del yacimiento; luego se registra en este portal para HSE. Los trabajos en locación requieren permiso de trabajo emitido por la operadora.
+- Requisitos de la empresa: en "Mi documentación" están los documentos que el proveedor debe firmar (código de ética, confidencialidad, compromiso HSE, conflicto de intereses) o presentar (ratio de accidentabilidad con certificado de la ART, estados contables, plan anual de HSE). Se firman en línea o se adjuntan desde ahí, no por el chat.
 - Datos de contacto: se editan desde "Mi perfil". Datos fiscales y bancarios solo se modifican mediante ticket con constancia (nunca por e-mail).
 """
 

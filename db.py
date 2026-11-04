@@ -215,7 +215,47 @@ CREATE TABLE IF NOT EXISTS provider_blocks (
     lift_reason TEXT
 );
 
+-- Requisitos que la empresa pide a todos los proveedores: documentos para firmar o para presentar
+CREATE TABLE IF NOT EXISTS requirements (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL CHECK (kind IN ('firma', 'presentacion', 'accidentabilidad')),
+    body TEXT NOT NULL DEFAULT '',
+    validity_months INTEGER,
+    mandatory INTEGER NOT NULL DEFAULT 1,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Presentaciones del proveedor para cada requisito (la última es la vigente)
+CREATE TABLE IF NOT EXISTS requirement_submissions (
+    id INTEGER PRIMARY KEY,
+    provider_id INTEGER NOT NULL REFERENCES providers(id),
+    requirement_id INTEGER NOT NULL REFERENCES requirements(id),
+    status TEXT NOT NULL CHECK (status IN ('en_revision', 'aprobado', 'rechazado')),
+    original_name TEXT,
+    stored_name TEXT,
+    mime TEXT,
+    size INTEGER,
+    signer_name TEXT,
+    signer_dni TEXT,
+    signer_role TEXT,
+    signer_ip TEXT,
+    data TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    submitted_by INTEGER REFERENCES users(id),
+    submitted_at TEXT NOT NULL,
+    reviewed_by INTEGER REFERENCES users(id),
+    reviewed_at TEXT,
+    review_comment TEXT,
+    valid_until TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_reqsub_provider ON requirement_submissions(provider_id, requirement_id, submitted_at);
 CREATE INDEX IF NOT EXISTS idx_evals_provider ON provider_evaluations(provider_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_blocks_provider ON provider_blocks(provider_id, lifted_at);
 CREATE INDEX IF NOT EXISTS idx_tickets_provider ON tickets(provider_id);
@@ -330,6 +370,8 @@ def init_db(seed=True):
         _ensure_performance_team(conn)
     if seed and conn.execute("SELECT COUNT(*) FROM provider_evaluations").fetchone()[0] == 0:
         _seed_scoring(conn)
+    if seed and conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0] == 0:
+        _seed_requirements(conn)
     conn.commit()
     conn.close()
 
@@ -369,6 +411,99 @@ def _seed_case_types(conn):
         if ct:
             due = (datetime.fromisoformat(t["created_at"]) + timedelta(hours=ct["response_hours"])).isoformat(sep=" ")
             conn.execute("UPDATE tickets SET case_type_id=?, response_due=? WHERE id=?", (ct["id"], due, t["id"]))
+
+
+# Requisitos iniciales: (nombre, descripción, tipo, meses de vigencia o None, texto del documento a firmar)
+REQUIREMENTS = [
+    ("Código de Ética y Conducta para Proveedores", "Principios de integridad, anticorrupción, regalos y trato justo que rigen la relación comercial.",
+     "firma", 12,
+     "{razon_social} (CUIT {cuit}) declara haber leído el Código de Ética y Conducta para Proveedores de {empresa} y se compromete a cumplirlo "
+     "y hacerlo cumplir por su personal y subcontratistas.\n\n"
+     "En particular, se compromete a:\n- No ofrecer ni aceptar sobornos, pagos indebidos ni regalos que puedan influir en decisiones comerciales.\n"
+     "- Respetar la legislación laboral, los derechos humanos y la prohibición de trabajo infantil y forzoso.\n"
+     "- Declarar cualquier conflicto de intereses con personal de {empresa}.\n"
+     "- Proteger la información y los activos de {empresa}.\n- Reportar de buena fe cualquier incumplimiento por la línea ética.\n\n"
+     "El incumplimiento podrá dar lugar a la suspensión o baja del registro de proveedores."),
+    ("Acuerdo de Confidencialidad", "Protección de la información técnica, comercial y operativa a la que accede el proveedor.",
+     "firma", None,
+     "{razon_social} (CUIT {cuit}), en adelante «el Proveedor», se obliga a mantener en estricta reserva toda información técnica, comercial, "
+     "operativa o de yacimientos que reciba de {empresa} con motivo de la relación comercial.\n\n"
+     "- La información solo podrá usarse para ejecutar los trabajos contratados.\n"
+     "- No podrá divulgarse a terceros sin autorización escrita, salvo obligación legal.\n"
+     "- La obligación de confidencialidad se mantiene durante cinco (5) años desde la finalización de la relación.\n"
+     "- Al terminar la relación, el Proveedor devolverá o destruirá la información recibida."),
+    ("Compromiso con la Política HSE y Reglas que Salvan Vidas", "Adhesión a la política de seguridad, salud y ambiente y a las reglas de cumplimiento obligatorio en locación.",
+     "firma", 12,
+     "{razon_social} (CUIT {cuit}) adhiere a la Política de Seguridad, Salud y Ambiente de {empresa} y se compromete a que todo su personal en locación "
+     "cumpla las Reglas que Salvan Vidas:\n- Trabajar con permiso de trabajo vigente.\n- Aislar energías antes de intervenir equipos.\n"
+     "- Usar arnés en trabajos en altura.\n- No circular bajo cargas suspendidas.\n- Respetar las velocidades y no usar el celular al conducir.\n"
+     "- No trabajar bajo efectos de alcohol o drogas.\n\nTodo incidente se reportará de inmediato al supervisor de {empresa} en el sitio."),
+    ("Declaración jurada de conflicto de intereses", "Vínculos del proveedor, sus socios o directivos con personal de la empresa.",
+     "firma", 12,
+     "{razon_social} (CUIT {cuit}) declara bajo juramento que ni la empresa, ni sus socios, directores o apoderados tienen vínculos de parentesco, "
+     "sociedad o interés económico con personal de {empresa} que puedan generar un conflicto de intereses, o bien que los ha informado por escrito.\n\n"
+     "Se compromete a informar cualquier cambio dentro de los diez (10) días de producido."),
+    ("Ratio de accidentabilidad (últimos 12 meses)", "Horas hombre trabajadas, accidentes con baja y días perdidos, con el certificado de siniestralidad de la ART como respaldo.",
+     "accidentabilidad", 12, ""),
+    ("Estados contables del último ejercicio", "Balance firmado por contador público y certificado por el consejo profesional.",
+     "presentacion", 12, ""),
+    ("Plan anual de HSE", "Programa de seguridad, capacitación y simulacros del año en curso.",
+     "presentacion", 12, ""),
+]
+
+
+def accident_indices(data):
+    """Índices de frecuencia (accidentes con baja por millón de horas) y gravedad (días perdidos por mil horas)."""
+    hh = data.get("horas_hombre") or 0
+    if hh <= 0:
+        return None, None
+    return round(data.get("accidentes", 0) * 1_000_000 / hh, 2), round(data.get("dias_perdidos", 0) * 1000 / hh, 3)
+
+
+def _seed_requirements(conn):
+    """Catálogo inicial y presentaciones de ejemplo."""
+    import json
+    ts = now_iso()
+    for i, (name, desc, kind, months, body) in enumerate(REQUIREMENTS):
+        conn.execute("""INSERT INTO requirements (name, description, kind, body, validity_months, sort_order, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?)""", (name, desc, kind, body, months, (i + 1) * 10, ts, ts))
+    if not conn.execute("SELECT COUNT(*) FROM providers").fetchone()[0]:
+        return
+    req = {r[0]: r[1] for r in conn.execute("SELECT name, id FROM requirements")}
+    now = datetime.now().replace(microsecond=0)
+
+    def sub(pid, name, status, days_ago, signer=None, data=None, comment=None, file=None):
+        months = next(r[3] for r in REQUIREMENTS if r[0] == name)
+        at = now - timedelta(days=days_ago)
+        valid = (at + timedelta(days=30 * months)).date().isoformat() if months and status == "aprobado" else None
+        conn.execute("""INSERT INTO requirement_submissions (provider_id, requirement_id, status, original_name, signer_name, signer_dni,
+                        signer_role, signer_ip, data, submitted_at, reviewed_at, review_comment, valid_until)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     (pid, req[name], status, file, *(signer or (None, None, None)), "firma en línea" if signer else None,
+                      json.dumps(data) if data else None, at.isoformat(sep=" "),
+                      (at + timedelta(days=2)).isoformat(sep=" ") if status != "en_revision" else None, comment, valid))
+
+    spp = ("Martín Ríos", "28.456.112", "Gerente de Cuentas y Contratos")
+    tub = ("Lucía Fernández", "31.902.554", "Responsable Comercial")
+    tra = ("Diego Sepúlveda", "27.118.903", "Jefe de Operaciones")
+    # Tubulares del Neuquén: completo
+    for n in REQUIREMENTS[:4]:
+        sub(2, n[0], "aprobado", 60, signer=tub)
+    sub(2, REQUIREMENTS[4][0], "aprobado", 45, data=dict(periodo="Oct 2025 a Sep 2026", horas_hombre=38000, accidentes=0, dias_perdidos=0, fatalidades=0),
+        file="Certificado siniestralidad Experta ART.pdf")
+    sub(2, REQUIREMENTS[5][0], "aprobado", 120, file="EECC 2025 Tubulares del Neuquén.pdf")
+    sub(2, REQUIREMENTS[6][0], "aprobado", 200, file="Plan HSE 2026.pdf")
+    # Servicios Petroleros Patagónicos: parcial, uno rechazado y uno en revisión
+    for n in REQUIREMENTS[:3]:
+        sub(1, n[0], "aprobado", 90, signer=spp)
+    sub(1, REQUIREMENTS[4][0], "en_revision", 3, data=dict(periodo="Oct 2025 a Sep 2026", horas_hombre=152000, accidentes=2, dias_perdidos=41, fatalidades=0),
+        file="Siniestralidad Prevención ART.pdf")
+    sub(1, REQUIREMENTS[5][0], "rechazado", 20, file="Balance 2025.pdf",
+        comment="Falta la certificación del Consejo Profesional de Ciencias Económicas.")
+    # Transportes Añelo: pocos requisitos y accidentabilidad alta
+    sub(3, REQUIREMENTS[0][0], "aprobado", 150, signer=tra)
+    sub(3, REQUIREMENTS[4][0], "aprobado", 30, data=dict(periodo="Oct 2025 a Sep 2026", horas_hombre=96000, accidentes=4, dias_perdidos=120, fatalidades=0),
+        file="Certificado siniestralidad Galeno ART.pdf")
 
 
 def _ensure_performance_team(conn):

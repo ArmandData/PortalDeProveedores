@@ -117,6 +117,9 @@
           {% if standing.blocks or standing.auto_blocks %}
             <ul class="doc-mini">{% for b in standing.blocks + standing.auto_blocks %}<li><span>{{ icon('lock', 'icon-sm') }}</span><span>{{ b.label }}<small>{{ b.effect }}</small></span></li>{% endfor %}</ul>
           {% else %}<p class="muted">Sin bloqueos activos.</p>{% endif %}
+          <a class="req-inline" href="{{ url_for('staff_requirements_provider', pid=p.id) }}">
+            <span>Requisitos: <strong>{{ req_summary.done }} de {{ req_summary.total }}</strong></span>
+            <span class="req-bar"><i style="width: {{ req_summary.pct }}%"></i></span><span>{{ req_summary.pct }}%</span></a>
           {% if can_manage_providers() %}
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">{{ score_badge(standing.last, standing.trend) }}
               <a class="btn btn-ghost btn-sm" href="{{ url_for('staff_provider_detail', pid=p.id) }}">Ver scoring</a></div>
