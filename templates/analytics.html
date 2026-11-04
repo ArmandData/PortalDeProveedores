@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, team_tag, priority %}
+{% block title %}Analítica{% endblock %}
+
+{% macro bar_list(items, maxv, empty_text) %}
+  {% if items %}
+  <ul class="bar-list" role="list">
+    {% for g in items %}
+      {% set pct = (100 * g.reclamos / maxv) if maxv else 0 %}
+      <li class="bar-row" tabindex="0" aria-label="{{ g.label }}: {{ g.reclamos }} reclamos de {{ g.total }} tickets, resolución promedio {{ g.avg_res | duracion }}">
+        <div class="bar-label" title="{{ g.label }}">{{ g.label }}</div>
+        <div class="bar-track">
+          <span class="bar" style="width: {{ [pct, 0.8 if g.reclamos else 0] | max }}%"></span>
+          <span class="bar-value">{{ g.reclamos }}</span>
+        </div>
+        <div class="bar-sub">de {{ g.total }} ticket{{ 's' if g.total != 1 }} · resolución prom. {{ g.avg_res | duracion }}</div>
+        <div class="bar-tip" role="tooltip">
+          <strong>{{ g.label }}</strong>
+          <span>Reclamos: <b>{{ g.reclamos }}</b> · Consultas: <b>{{ g.total - g.reclamos }}</b></span>
+          <span>Abiertos: <b>{{ g.abiertos }}</b></span>
+          <span>1ra respuesta prom.: <b>{{ g.avg_resp | duracion }}</b></span>
+          <span>Resolución prom.: <b>{{ g.avg_res | duracion }}</b></span>
+          <span>Dentro del SLA: <b>{{ (g.sla_pct ~ '%') if g.sla_pct is not none else '—' }}</b></span>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    <p class="muted" style="padding:8px 0">{{ empty_text }}</p>
+  {% endif %}
+{% endmacro %}
+
+{% block main %}
+<div class="page" style="max-width:1320px">
+  <div class="page-head">
+    <div>
+      <h1>Analítica de desempeño</h1>
+      <p>Reclamos por proveedor y por contrato, y tiempos de respuesta y resolución de cada ticket.</p>
+    </div>
+    <a class="btn btn-secondary" href="{{ url_for('staff_analytics_csv', periodo=period, equipo=team, proveedor=provider) }}">{{ icon('download', 'icon-sm') }}Exportar CSV</a>
+  </div>
+
+  <form class="toolbar filters" method="get" aria-label="Filtros">
+    <label class="filter"><span>Período</span>
+      <select class="select" name="periodo" data-autosubmit>
+        {% for key, (label, _) in periods.items() %}<option value="{{ key }}" {% if period == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></label>
+    <label class="filter"><span>Equipo</span>
+      <select class="select" name="equipo" data-autosubmit>
+        <option value="">Todos los equipos</option>
+        {% for t in teams %}<option value="{{ t.id }}" {% if team == t.id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select></label>
+    <label class="filter"><span>Proveedor</span>
+      <select class="select" name="proveedor" data-autosubmit>
+        <option value="">Todos los proveedores</option>
+        {% for p in providers %}<option value="{{ p.id }}" {% if provider == p.id %}selected{% endif %}>{{ p.razon_social }}</option>{% endfor %}
+      </select></label>
+    <input type="hidden" name="orden" value="{{ sort }}">
+    <noscript><button class="btn btn-secondary" type="submit">Aplicar</button></noscript>
+  </form>
+
+  {% if not kpis.total %}
+    <div class="card"><div class="empty"><div class="icon-wrap">{{ icon('chart') }}</div>
+      <h3>No hay tickets en este período</h3><p>Probá con un período más largo o quitá los filtros.</p>
+      <a class="btn btn-secondary" href="{{ url_for('staff_analytics', periodo='todo') }}">Ver todo el historial</a></div></div>
+  {% else %}
+
+  <section class="kpi-grid" aria-label="Indicadores principales">
+    <div class="kpi"><span class="kpi-label">Tickets</span><strong class="kpi-value">{{ kpis.total }}</strong>
+      <span class="kpi-sub">{{ kpis.reclamos }} reclamo{{ 's' if kpis.reclamos != 1 }} · {{ kpis.total - kpis.reclamos }} consulta{{ 's' if kpis.total - kpis.reclamos != 1 }}</span></div>
+    <div class="kpi"><span class="kpi-label">Abiertos</span><strong class="kpi-value">{{ kpis.abiertos }}</strong>
+      <span class="kpi-sub">{% if kpis.vencidos %}<span class="t-danger">{{ icon('alert', 'icon-sm') }} {{ kpis.vencidos }} con plazo vencido</span>{% else %}{{ icon('check-circle', 'icon-sm') }} ninguno vencido{% endif %}</span></div>
+    <div class="kpi"><span class="kpi-label">Primera respuesta (promedio)</span><strong class="kpi-value">{{ kpis.avg_resp | duracion }}</strong>
+      <span class="kpi-sub">Mediana {{ kpis.med_resp | duracion }}</span></div>
+    <div class="kpi"><span class="kpi-label">Resolución (promedio)</span><strong class="kpi-value">{{ kpis.avg_res | duracion }}</strong>
+      <span class="kpi-sub">Mediana {{ kpis.med_res | duracion }} · {{ kpis.resueltos }} resuelto{{ 's' if kpis.resueltos != 1 }}</span></div>
+    <div class="kpi"><span class="kpi-label">Resueltos dentro del SLA</span><strong class="kpi-value">{{ (kpis.sla_pct ~ '%') if kpis.sla_pct is not none else '—' }}</strong>
+      <span class="kpi-sub">{% if kpis.sla_pct is not none %}{% if kpis.sla_pct >= 85 %}<span class="t-ok">{{ icon('check-circle', 'icon-sm') }} Objetivo 85% cumplido</span>{% else %}<span class="t-warn">{{ icon('alert', 'icon-sm') }} Debajo del objetivo de 85%</span>{% endif %}{% else %}Sin tickets resueltos{% endif %}</span></div>
+  </section>
+
+  <div class="chart-grid">
+    <section class="card chart-card">
+      <div class="card-head"><div><h2>Reclamos por proveedor</h2><p>Cantidad de reclamos en el período · pasá el mouse para ver el detalle</p></div></div>
+      <div class="card-body">{{ bar_list(by_provider, max_reclamos_p, 'Sin datos.') }}</div>
+    </section>
+    <section class="card chart-card">
+      <div class="card-head"><div><h2>Reclamos por contrato</h2><p>Cantidad de reclamos en el período · pasá el mouse para ver el detalle</p></div></div>
+      <div class="card-body">{{ bar_list(by_contract, max_reclamos_c, 'Sin datos.') }}</div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:20px">
+    <div class="card-head"><div><h2>Desempeño por equipo</h2><p>Tiempo promedio de resolución (barra), primera respuesta y cumplimiento del SLA</p></div></div>
+    <div class="table-wrap">
+      <table class="table perf-table">
+        <caption class="sr-only">Desempeño por equipo</caption>
+        <thead><tr><th scope="col">Equipo</th><th scope="col" class="num">Tickets</th><th scope="col" class="num">Abiertos</th>
+          <th scope="col" class="num">1ra respuesta prom.</th><th scope="col">Resolución prom.</th><th scope="col" class="num">Dentro del SLA</th></tr></thead>
+        <tbody>
+          {% for g in by_team %}
+          <tr>
+            <td><strong>{{ g.label }}</strong></td>
+            <td class="num">{{ g.total }}</td>
+            <td class="num">{{ g.abiertos }}</td>
+            <td class="num">{{ g.avg_resp | duracion }}</td>
+            <td><div class="inline-bar"><span class="bar" style="width: {{ (100 * (g.avg_res or 0) / max_res_team) | round(1) }}%"></span><span class="bar-value">{{ g.avg_res | duracion }}</span></div></td>
+            <td class="num">{% if g.sla_pct is not none %}<span class="sla-pill {{ 'ok' if g.sla_pct >= 85 else ('warn' if g.sla_pct >= 60 else 'bad') }}">{{ icon('check-circle' if g.sla_pct >= 85 else 'alert', 'icon-sm') }}{{ g.sla_pct }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:20px">
+    <div class="card-head">
+      <div><h2>Tiempo de resolución por ticket</h2><p>{{ tickets | length }} ticket{{ 's' if tickets | length != 1 }} · la primera respuesta es el primer mensaje del equipo al proveedor</p></div>
+      <nav class="tabs" aria-label="Ordenar">
+        {% for key, label in [('reciente', 'Más recientes'), ('resolucion', 'Mayor resolución'), ('respuesta', 'Mayor 1ra respuesta')] %}
+          <a href="{{ url_for('staff_analytics', periodo=period, equipo=team, proveedor=provider, orden=key) }}" {% if sort == key %}aria-current="true"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-compact">
+        <caption class="sr-only">Tiempos por ticket</caption>
+        <thead><tr><th scope="col">Ticket</th><th scope="col">Proveedor</th><th scope="col" class="hide-sm">Contrato</th><th scope="col" class="hide-md">Equipo</th>
+          <th scope="col" class="num">1ra respuesta</th><th scope="col" class="num">Resolución</th><th scope="col">SLA</th></tr></thead>
+        <tbody>
+          {% for t in tickets %}
+          <tr data-href="{{ url_for('staff_ticket_detail', code=t.code) }}">
+            <td><a class="subject" href="{{ url_for('staff_ticket_detail', code=t.code) }}">{{ t.subject }}</a>
+              <span class="sub"><span class="mono">{{ t.code }}</span>· {{ 'Reclamo' if t.kind == 'reclamo' else 'Consulta' }} · {{ t.created_at | fecha(False) }}</span></td>
+            <td>{{ t.provider }}</td>
+            <td class="hide-sm"><span class="chip-contract">{{ t.contract }}</span></td>
+            <td class="hide-md">{{ team_tag(t.team, t.team_color) }}</td>
+            <td class="num nowrap">{{ t.response_h | duracion }}</td>
+            <td class="num nowrap">{% if t.resolved %}{{ t.resolution_h | duracion }}{% else %}<span class="muted">En curso</span>{% endif %}</td>
+            <td><span class="sla-pill {{ {'cumplido': 'ok', 'en_plazo': 'neutral', 'incumplido': 'warn', 'vencido': 'bad'}[t.sla] }}">{{ icon({'cumplido': 'check-circle', 'en_plazo': 'clock', 'incumplido': 'alert', 'vencido': 'alert'}[t.sla], 'icon-sm') }}{{ SLA_LABELS[t.sla] }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

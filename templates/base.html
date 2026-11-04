@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}Portal de Proveedores{% endblock %} · {{ company }}</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232952cc'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
-  <script src="{{ url_for('static', filename='js/theme-init.js') }}?v=2"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=2">
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=2" defer></script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23005da7'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
+  <script src="{{ url_for('static', filename='js/theme-init.js') }}?v=3"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=3">
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=3" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -36,6 +36,8 @@
         <a href="{{ url_for('staff_inbox') }}" {% if ep in ('staff_inbox', 'staff_ticket_detail') %}aria-current="page"{% endif %}>{{ icon('inbox') }}Bandeja de tickets
           {% if nav_open %}<span class="count" aria-label="{{ nav_open }} abiertos">{{ nav_open }}</span>{% endif %}</a>
         <a href="{{ url_for('staff_inbox', estado='mios') }}">{{ icon('user') }}Asignados a mí</a>
+        <span class="nav-label">Gestión</span>
+        <a href="{{ url_for('staff_analytics') }}" {% if ep == 'staff_analytics' %}aria-current="page"{% endif %}>{{ icon('chart') }}Analítica</a>
       {% endif %}
     </nav>
     <div class="sidebar-foot">
