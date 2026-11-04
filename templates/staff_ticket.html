@@ -20,6 +20,7 @@
         <div class="lbl">{{ icon('sparkles', 'icon-sm') }}Resumen automático{% if t.ai_confidence is not none %} · confianza {{ (t.ai_confidence * 100) | round | int }}%{% endif %}</div>
         <p>{{ t.summary }}</p>
         {% if t.reference %}<p style="margin-top:6px" class="muted">Referencias: <span class="mono">{{ t.reference }}</span></p>{% endif %}
+        {% if t.location %}<p style="margin-top:2px" class="muted">Locación: <strong>{{ t.location }}</strong></p>{% endif %}
       </section>
 
       <section class="card">
@@ -103,6 +104,20 @@
         </div>
       </section>
       {% endif %}
+
+      <section class="card">
+        <div class="card-head"><h2>Documentación del proveedor</h2>
+          {% if docs_summary.bloqueantes %}<span class="badge badge-vencido-hard">Ingreso bloqueado</span>{% elif docs_summary.vencido or docs_summary.por_vencer %}<span class="badge badge-por_vencer">Con alertas</span>{% else %}<span class="badge badge-vigente">Al día</span>{% endif %}</div>
+        <div class="card-body">
+          <ul class="doc-mini">
+            {% for d in docs if d.status in ('vencido', 'por_vencer') %}
+              <li><span class="badge badge-doc-{{ d.status }}">{{ d.status_label }}</span><span>{{ d.nombre }}<small>{{ 'Venció' if d.status == 'vencido' else 'Vence' }} el {{ d.vence_fmt }}</small></span></li>
+            {% else %}
+              <li class="muted">Toda la documentación obligatoria está vigente.</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </section>
 
       <section class="card">
         <div class="card-head"><h2>Proveedor</h2></div>

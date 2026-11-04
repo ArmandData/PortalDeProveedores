@@ -21,7 +21,7 @@
     <div class="input-group grow">
       {{ icon('search', 'icon-sm') }}
       <label class="sr-only" for="q">Buscar contratos</label>
-      <input class="input" id="q" name="q" type="search" value="{{ q }}" placeholder="Buscar por número u objeto">
+      <input class="input" id="q" name="q" type="search" value="{{ q }}" placeholder="Buscar por número, objeto o yacimiento">
     </div>
   </form>
 
@@ -31,6 +31,7 @@
       <a class="card contract-card {% if c.status in ('vencido', 'rescindido') %}is-dim{% endif %}" href="{{ url_for('contract_detail', numero=c.numero) }}">
         <span class="top"><span class="num">{{ c.numero }}</span>{{ contract_badge(c.status) }}</span>
         <span class="obj">{{ c.objeto }}</span>
+        {% if c.yacimiento %}<span class="muted" style="font-size:13px;display:flex;gap:6px;align-items:center">{{ icon('building', 'icon-sm') }}{{ c.yacimiento }}</span>{% endif %}
         <span class="facts">
           <span><span>Tipo</span>{{ c.tipo_label }}</span>
           <span><span>Monto</span>{{ c.monto_fmt }}</span>

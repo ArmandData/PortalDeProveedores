@@ -26,7 +26,7 @@
     <div class="input-group grow">
       {{ icon('search', 'icon-sm') }}
       <label class="sr-only" for="q">Buscar tickets</label>
-      <input class="input" id="q" name="q" type="search" value="{{ q }}" placeholder="Buscar por ID, asunto, factura, OC o contrato">
+      <input class="input" id="q" name="q" type="search" value="{{ q }}" placeholder="Buscar por ID, asunto, factura, OC, HES o contrato">
     </div>
   </form>
 
@@ -43,7 +43,8 @@
               <a class="subject" href="{{ url_for('ticket_detail', code=t.code) }}">{% if t.unread %}<span class="unread-dot" title="Respuesta nueva"></span> {% endif %}{{ t.subject }}</a>
               <span class="sub"><span class="mono">{{ t.code }}</span>·<span>{{ 'Reclamo' if t.kind == 'reclamo' else 'Consulta' }}</span>
                 {% if t.contract_numero %}<span class="chip-contract">{{ t.contract_numero }}</span>{% endif %}
-                {% if t.reference %}<span>· {{ t.reference }}</span>{% endif %}</span>
+                {% if t.reference %}<span>· {{ t.reference }}</span>{% endif %}
+                {% if t.location %}<span>· {{ t.location }}</span>{% endif %}</span>
             </td>
             <td>{{ status_badge(t.status) }}<div style="margin-top:4px">{{ sla(t) }}</div></td>
             <td class="hide-sm">{{ team_tag(t.team_name, t.team_color) }}</td>

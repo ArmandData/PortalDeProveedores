@@ -6,6 +6,8 @@
      data-conversation="{{ active.id if active else '' }}"
      data-accept="{{ accept }}" data-max-mb="{{ max_mb }}" data-max-files="{{ max_files }}"
      data-preselect="{{ preselect | tojson | forceescape if preselect else '' }}"
+     data-preselect-none="{{ '1' if preselect_none else '' }}" data-prefill="{{ prefill }}"
+     data-docs-blocking="{{ nav_docs_summary.bloqueantes if nav_docs_summary else 0 }}"
      data-contact="{{ nav_provider.contacto_nombre.split(' ')[0] if nav_provider.contacto_nombre else '' }}">
 
   <!-- Lista de conversaciones -->
@@ -91,16 +93,17 @@
   <div class="picker-search input-group" {% if contracts | length < 5 %}hidden{% endif %}>
     {{ icon('search', 'icon-sm') }}
     <label class="sr-only" for="contract-search">Buscar contrato</label>
-    <input class="input" type="search" data-contract-search placeholder="Buscar por número u objeto del contrato">
+    <input class="input" type="search" data-contract-search placeholder="Buscar por número, objeto o yacimiento">
   </div>
   <div class="contract-grid" role="list">
     {% for c in contracts %}
       <div role="listitem">
       <button type="button" class="contract-option {% if c.status in ('vencido', 'rescindido') %}is-dim{% endif %}"
-              data-contract='{{ {"id": c.id, "numero": c.numero, "objeto": c.objeto, "vigencia": c.vigencia, "status": c.status, "status_label": c.status_label, "monto_fmt": c.monto_fmt, "condicion_pago": c.condicion_pago, "team_name": c.team_name, "tipo_label": c.tipo_label, "days_left": c.days_left} | tojson | forceescape }}'
-              data-search="{{ (c.numero ~ ' ' ~ c.objeto) | lower }}" aria-pressed="false">
+              data-contract='{{ {"id": c.id, "numero": c.numero, "objeto": c.objeto, "vigencia": c.vigencia, "status": c.status, "status_label": c.status_label, "monto_fmt": c.monto_fmt, "condicion_pago": c.condicion_pago, "team_name": c.team_name, "tipo_label": c.tipo_label, "days_left": c.days_left, "yacimiento": c.yacimiento} | tojson | forceescape }}'
+              data-search="{{ (c.numero ~ ' ' ~ c.objeto ~ ' ' ~ (c.yacimiento or '')) | lower }}" aria-pressed="false">
         <span class="top"><span class="num">{{ c.numero }}</span>{{ contract_badge(c.status) }}</span>
         <span class="obj">{{ c.objeto }}</span>
+        {% if c.yacimiento %}<span class="vig">{{ icon('building', 'icon-sm') }}{{ c.yacimiento }}</span>{% endif %}
         <span class="vig">{{ icon('calendar', 'icon-sm') }}{{ c.vigencia }}</span>
       </button>
       </div>
@@ -108,7 +111,7 @@
     <div role="listitem">
     <button type="button" class="contract-option none" data-contract="none" data-search="no relacionado sin contrato otro" aria-pressed="false">
       <strong>No está relacionado con un contrato</strong>
-      <span>Por ejemplo: alta, datos bancarios o impuestos</span>
+      <span>Por ejemplo: documentación, seguros, datos bancarios o impuestos</span>
     </button>
     </div>
     <p class="picker-empty" data-picker-empty hidden>No encontramos contratos con ese texto.</p>

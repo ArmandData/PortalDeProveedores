@@ -27,6 +27,8 @@
         <a href="{{ url_for('tickets') }}" {% if ep == 'tickets' %}aria-current="page"{% endif %}>{{ icon('ticket') }}Mis tickets
           {% if nav_unread %}<span class="count" aria-label="{{ nav_unread }} respuestas nuevas">{{ nav_unread }}</span>{% endif %}</a>
         <a href="{{ url_for('contracts') }}" {% if ep in ('contracts', 'contract_detail') %}aria-current="page"{% endif %}>{{ icon('contract') }}Mis contratos</a>
+        <a href="{{ url_for('documents') }}" {% if ep == 'documents' %}aria-current="page"{% endif %}>{{ icon('shield') }}Mi documentación
+          {% if nav_docs_alert %}<span class="count count-warn" aria-label="{{ nav_docs_alert }} documentos vencidos o por vencer">{{ nav_docs_alert }}</span>{% endif %}</a>
         <a href="{{ url_for('profile') }}" {% if ep == 'profile' %}aria-current="page"{% endif %}>{{ icon('user') }}Mi perfil</a>
       {% else %}
         <span class="nav-label">Mesa de ayuda</span>
