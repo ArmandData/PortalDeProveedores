@@ -4,6 +4,16 @@
 <span class="standing standing-{{ st.status }}">{{ icon({'habilitado': 'check-circle', 'restringido': 'alert', 'bloqueado': 'lock'}[st.status], 'icon-sm') }}{{ st.status_label }}</span>
 {%- endmacro %}
 
+{% macro sim_score(sc, compact=False) -%}
+{% if compact %}
+<span class="score-sim score-sim-compact" title="Score {{ sc.score }}, categoría {{ sc.category }} ({{ CATEGORY_LABELS[sc.category] }}). Simulado: estimado con datos del portal mientras se define el método de cálculo.">
+  <span class="score score-{{ sc.category }}"><strong>{{ sc.score }}</strong><span class="score-cat">{{ sc.category }}</span></span><span class="sim-tag" aria-label="simulado">Sim.</span></span>
+{% else %}
+<span class="score-sim" title="Score simulado: estimado con datos del portal mientras se define el método de cálculo">
+  {{ score_badge(sc) }}<span class="sim-tag">Simulado</span></span>
+{% endif %}
+{%- endmacro %}
+
 {% macro score_badge(ev, trend=None) -%}
 {% if ev %}
 <span class="score score-{{ ev.category }}" title="Categoría {{ ev.category }}: {{ CATEGORY_LABELS[ev.category] }}">

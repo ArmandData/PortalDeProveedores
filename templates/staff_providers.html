@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, avatar %}
-{% from "_scoring.html" import standing_badge, score_badge %}
+{% from "_scoring.html" import standing_badge, score_badge, sim_score %}
 {% block title %}Proveedores y scoring{% endblock %}
 {% block main %}
 <div class="page" style="max-width:1320px">
@@ -13,7 +13,7 @@
 
   <div class="kpi-grid" style="grid-template-columns:repeat(4, minmax(0, 1fr))">
     <div class="kpi"><span class="kpi-label">Score promedio</span><strong class="kpi-value">{{ kpis.avg if kpis.avg is not none else '—' }}</strong>
-      <span class="kpi-sub">de {{ kpis.total }} proveedor{{ 'es' if kpis.total != 1 }}, última evaluación</span></div>
+      <span class="kpi-sub">de {{ kpis.total }} proveedor{{ 'es' if kpis.total != 1 }} · simulado</span></div>
     <div class="kpi"><span class="kpi-label">Habilitados</span><strong class="kpi-value t-ok">{{ kpis.habilitado }}</strong>
       <span class="kpi-sub">Sin bloqueos activos</span></div>
     <div class="kpi"><span class="kpi-label">Operación restringida</span><strong class="kpi-value t-warn">{{ kpis.restringido }}</strong>
@@ -31,7 +31,7 @@
           <th scope="col">Score</th>
           <th scope="col">Estado para operar</th>
           <th scope="col" class="hide-sm">Requisitos</th>
-          <th scope="col" class="hide-sm">Última evaluación</th>
+          <th scope="col" class="hide-sm">Última evaluación manual</th>
           <th scope="col" class="num hide-md" title="Tickets abiertos">Abiertos</th>
         </tr></thead>
         <tbody>
@@ -42,13 +42,13 @@
                 <div><a class="subject" href="{{ url_for('staff_provider_detail', pid=r.p.id) }}">{{ r.p.razon_social }}</a>
                   <span class="sub mono">{{ r.p.cuit }}</span><span class="sub">{{ r.p.rubro or '—' }}</span></div></div>
             </td>
-            <td class="nowrap" data-label="Score">{{ score_badge(r.st.last, r.st.trend) }}</td>
+            <td class="nowrap" data-label="Score">{{ sim_score(r.score) }}</td>
             <td data-label="Estado">{{ standing_badge(r.st) }}
               {% set n = r.st.blocks | length + r.st.auto_blocks | length %}
               {% if n %}<span class="sub">{{ (r.st.blocks + r.st.auto_blocks) | map(attribute='label') | join(' · ') }}</span>{% endif %}</td>
             <td class="hide-sm nowrap"><div class="req-progress req-progress-sm"><span class="req-pct">{{ r.req.pct }}%</span><span class="req-bar"><i style="width: {{ r.req.pct }}%"></i></span></div>
               <span class="sub">{{ r.req.done }} de {{ r.req.total }}</span></td>
-            <td class="hide-sm nowrap">{% if r.st.last %}{{ r.st.last.period }}<span class="sub">{{ r.st.last.created_at | fecha(False) }}</span>{% else %}<span class="muted">Sin evaluar</span>{% endif %}</td>
+            <td class="hide-sm nowrap">{% if r.st.last %}{{ r.st.last.period }}<span class="sub">{{ r.st.last.score }} puntos · {{ r.st.last.created_at | fecha(False) }}</span>{% else %}<span class="muted">Sin evaluar</span>{% endif %}</td>
             <td class="num hide-md">{{ r.open_tickets }}</td>
           </tr>
           {% endfor %}
@@ -57,7 +57,9 @@
     </div>
   </section>
   <p class="muted" style="font-size:13px;margin-top:12px">
-    <strong>Score:</strong> 0 a 100, ponderado entre calidad (30%), cumplimiento (25%), HSE (25%) y documentación (20%).
+    <strong>Score simulado:</strong> mientras se define el método de cálculo, cada criterio se estima con datos del portal de los últimos
+    180 días (no conformidades, requisitos fuera de plazo o rechazados, eventos HSE, accidentabilidad, requisitos y documentación) y, si hay una evaluación manual del último año, se promedia con ella.
+    Se pondera calidad (30%), cumplimiento (25%), HSE (25%) y documentación (20%).
     Categorías: A preferente (85+), B aprobado (70–84), C en observación (50–69), D no apto (menos de 50).
     El proveedor no ve su score.
   </p>

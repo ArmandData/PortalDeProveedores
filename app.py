@@ -1160,7 +1160,8 @@ def staff_inbox():
     rows = db.query(sql, args)
     contracts_all = db.query("""SELECT c.numero, p.razon_social FROM contracts c JOIN providers p ON p.id=c.provider_id
                                 ORDER BY c.numero DESC""")
-    return render_template("staff_inbox.html", tickets=rows, teams=teams, team=str(team), status=status,
+    scores = {pid: provider_score(pid) for pid in {r["provider_id"] for r in rows}}
+    return render_template("staff_inbox.html", tickets=rows, teams=teams, team=str(team), status=status, scores=scores,
                            priority=priority, q=q, contract=contract, contracts=contracts_all)
 
 
@@ -1417,6 +1418,57 @@ def doc_score_suggestion(docs_summary):
     return 5
 
 
+SCORE_WINDOW_DAYS = 180
+
+
+def provider_score(provider_id):
+    """Score del proveedor (0-100, categoría A-D) visible para todos los equipos.
+
+    SIMULADO: el método definitivo todavía no está definido. Mientras tanto, cada criterio (1 a 5) se estima
+    con datos del portal de los últimos 180 días y, si hay una evaluación manual del último año, se promedia
+    con ella. Para usar el cálculo real, reemplazar solo esta función: el resto del portal muestra lo que devuelve.
+    """
+    cache = g.setdefault("_provider_scores", {})
+    if provider_id in cache:
+        return cache[provider_id]
+    since = (datetime.now() - timedelta(days=SCORE_WINDOW_DAYS)).isoformat(sep=" ")
+    s = db.query("""SELECT SUM(ct.name LIKE 'No conformidad%' AND t.kind='reclamo') AS nc,
+                    SUM(tm.slug='hse' AND t.kind='reclamo') AS hse FROM tickets t JOIN teams tm ON tm.id=t.team_id
+                    LEFT JOIN case_types ct ON ct.id=t.case_type_id WHERE t.provider_id=? AND t.created_at>=?""",
+                 (provider_id, since), one=True)
+    _, docs_summary = provider_documents(provider_id)
+    _, req = provider_requirements(provider_id)
+    acc_if = req["accidents"]["indices"][0] if req["accidents"] else None
+    clamp = lambda v: max(1, min(5, v))  # noqa: E731
+    n_nc, n_hse = s["nc"] or 0, s["hse"] or 0
+    acc_pen = 2 if acc_if is not None and acc_if >= 20 else (1 if acc_if is not None and acc_if >= 10 else 0)
+    data = {
+        "calidad": clamp(5 - n_nc),
+        "cumplimiento": clamp(5 - req["overdue"] - (1 if req["rechazados"] else 0)),
+        "hse": clamp(5 - n_hse - acc_pen),
+        "documentacion": clamp(round((doc_score_suggestion(docs_summary) + 1 + 4 * req["pct"] / 100) / 2)),
+    }
+    why = {
+        "calidad": f"{n_nc} no conformidad{'es' if n_nc != 1 else ''}",
+        "cumplimiento": f"{req['overdue']} requisito{'s' if req['overdue'] != 1 else ''} fuera de plazo · "
+                        f"{req['rechazados']} rechazado{'s' if req['rechazados'] != 1 else ''}",
+        "hse": f"{n_hse} evento{'s' if n_hse != 1 else ''} HSE" + (f" · índice de frecuencia {acc_if}" if acc_if is not None else ""),
+        "documentacion": f"Requisitos {req['pct']}% · " + ("documentación vencida que bloquea ingreso" if docs_summary["bloqueantes"]
+                                                         else "documentación vencida" if docs_summary["vencido"]
+                                                         else "documentación por vencer" if docs_summary["por_vencer"] else "documentación al día"),
+    }
+    manual = db.query("""SELECT * FROM provider_evaluations WHERE provider_id=? AND created_at>=? ORDER BY created_at DESC, id DESC LIMIT 1""",
+                      (provider_id, (datetime.now() - timedelta(days=365)).isoformat(sep=" ")), one=True)
+    criteria = dict(data)
+    if manual:
+        for key in criteria:
+            criteria[key] = clamp(int((data[key] + manual[key]) / 2 + 0.5))  # promedio, redondeo hacia arriba en .5
+            why[key] += f" · evaluación manual {manual[key]}/5"
+    score, category = db.compute_score(criteria)
+    cache[provider_id] = dict(score=score, category=category, simulated=True, why=why, uses_manual=bool(manual), **criteria)
+    return cache[provider_id]
+
+
 def provider_standing(provider_id, docs_summary=None):
     """Estado para operar: bloqueos activos (manuales y automáticos por documentación) y último scoring."""
     if docs_summary is None:
@@ -1450,7 +1502,7 @@ def provider_standing(provider_id, docs_summary=None):
 
 
 app.jinja_env.globals.update(BLOCK_KINDS=BLOCK_KINDS, CATEGORY_LABELS=CATEGORY_LABELS, SCORING_CRITERIA=db.SCORING_CRITERIA,
-                             can_manage_providers=can_manage_providers)
+                             can_manage_providers=can_manage_providers, provider_score=provider_score)
 
 
 @app.route("/equipo/proveedores")
@@ -1463,8 +1515,10 @@ def staff_providers():
             f"SELECT COUNT(*) AS n FROM tickets WHERE provider_id=? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
             (p["id"], *OPEN_STATUSES), one=True)["n"]))
     order = {"bloqueado": 0, "restringido": 1, "habilitado": 2}
-    rows.sort(key=lambda r: (order[r["st"]["status"]], r["st"]["last"]["score"] if r["st"]["last"] else -1))
-    scored = [r["st"]["last"]["score"] for r in rows if r["st"]["last"]]
+    for r in rows:
+        r["score"] = provider_score(r["p"]["id"])
+    rows.sort(key=lambda r: (order[r["st"]["status"]], r["score"]["score"]))
+    scored = [r["score"]["score"] for r in rows]
     kpis = dict(total=len(rows), avg=round(sum(scored) / len(scored)) if scored else None,
                 **{k: sum(1 for r in rows if r["st"]["status"] == k) for k in STANDING_LABELS})
     return render_template("staff_providers.html", rows=rows, kpis=kpis)
@@ -1495,6 +1549,7 @@ def staff_provider_detail(pid, form_errors=None, form_values=None):
                                  documentacion=doc_score_suggestion(docs_summary))
     _, req_summary = provider_requirements(pid)
     return render_template("staff_provider.html", p=p, st=st, docs_summary=docs_summary, evaluations=evaluations, req_summary=req_summary,
+                           score=provider_score(pid),
                            history=history, signals=signals, contracts=contracts, values=values,
                            errors=form_errors or {}, doc_suggestion=doc_score_suggestion(docs_summary))
 
@@ -1522,7 +1577,8 @@ def staff_provider_evaluate(pid):
                   comment, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                (pid, values["period"], values["calidad"], values["cumplimiento"], values["hse"], values["documentacion"],
                 score, cat, values["comment"], g.user["id"], db.now_iso()))
-    msg = f"Evaluación registrada: score {score} (categoría {cat}, {CATEGORY_LABELS[cat].lower()})."
+    msg = (f"Evaluación registrada: {score} puntos (categoría {cat}, {CATEGORY_LABELS[cat].lower()}). "
+           "Queda en el historial para el cálculo definitivo; por ahora el score visible es simulado.")
     if cat == "D" and not provider_standing(pid)["blocks"]:
         msg += " El score es no apto: evaluá registrar un bloqueo."
     flash(msg, "success")

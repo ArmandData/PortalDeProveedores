@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, avatar %}
+{% from "_scoring.html" import sim_score %}
 {% block title %}Requisitos de proveedores{% endblock %}
 {% block main %}
 <div class="page" style="max-width:1320px">
@@ -43,6 +44,7 @@
         <thead><tr>
           <th scope="col">Proveedor</th>
           <th scope="col">Completitud</th>
+          <th scope="col">Score</th>
           {% for r in reqs %}<th scope="col" class="req-col hide-md" title="{{ r.name }}"><span>{{ r.name }}</span></th>{% endfor %}
         </tr></thead>
         <tbody>
@@ -54,6 +56,7 @@
               <div class="req-progress req-progress-sm"><span class="req-pct">{{ row.summary.pct }}%</span><span class="req-bar"><i style="width: {{ row.summary.pct }}%"></i></span></div>
               <span class="sub">{{ row.summary.done }} de {{ row.summary.total }}{% if row.summary.en_revision %} · {{ row.summary.en_revision }} en revisión{% endif %}{% if row.summary.pendientes %} · {{ row.summary.pendientes }} pendiente{{ 's' if row.summary.pendientes > 1 }}{% endif %}</span>
               {% if row.summary.pre_start_missing %}<span class="sub t-danger">{{ icon('lock', 'icon-sm') }} Previos al inicio incompletos</span>{% endif %}</td>
+            <td class="nowrap" data-label="Score">{{ sim_score(provider_score(row.p.id), True) }}</td>
             {% for r in reqs %}{% set i = row.by_req[r.id] %}
               <td class="req-col hide-md">{% if i.status == 'no_aplica' %}<span class="muted" title="{{ r.name }}: no se le pide">—</span>{% else %}<span class="req-dot req-dot-{{ i.status }}{% if i.overdue %} req-dot-overdue{% endif %}" title="{{ r.name }}: {{ i.status_label }}{% if i.overdue %} · plazo vencido{% endif %}" aria-label="{{ i.status_label }}{% if i.overdue %}, plazo vencido{% endif %}"></span>{% endif %}</td>
             {% endfor %}

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, avatar %}
+{% from "_scoring.html" import sim_score %}
 {% block title %}Requisitos · {{ p.razon_social }}{% endblock %}
 {% block main %}
 <div class="page" style="max-width:1100px">
@@ -11,6 +12,7 @@
     <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end">
       <div class="req-progress"><span class="req-pct">{{ summary.pct }}%</span><span class="req-bar"><i style="width: {{ summary.pct }}%"></i></span>
         <span class="muted">{{ summary.done }} de {{ summary.total }} completos</span></div>
+      <div>{{ sim_score(provider_score(p.id)) }}</div>
       {% if g.user.role == 'admin' %}<a class="btn btn-secondary btn-sm" href="{{ url_for('provider_requirements_config', pid=p.id) }}">{{ icon('note', 'icon-sm') }}Configurar requisitos y plazos</a>{% endif %}
     </div>
   </div>

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, avatar %}
-{% from "_scoring.html" import standing_badge, score_badge %}
+{% from "_scoring.html" import standing_badge, score_badge, sim_score %}
 {% block title %}{{ p.razon_social }} · Scoring{% endblock %}
 {% block main %}
 <div class="page" style="max-width:1320px">
@@ -28,32 +28,31 @@
       </div>
     </div>
     <div class="standing-score">
-      <span class="kpi-label">Score actual</span>
-      {{ score_badge(st.last, st.trend) }}
-      {% if st.last %}<span class="kpi-sub">{{ st.last.period }} · {{ st.last.created_at | fecha(False) }}</span>{% endif %}
+      <span class="kpi-label">Score</span>
+      {{ sim_score(score) }}
+      <span class="kpi-sub">Estimado con datos del portal</span>
     </div>
   </section>
 
   <div class="detail-grid provider-grid">
     <div class="stack">
       <section class="card">
-        <div class="card-head"><div><h2>Score por criterio</h2><p>{% if st.last %}Evaluación «{{ st.last.period }}»{% else %}Todavía no tiene evaluaciones.{% endif %}</p></div></div>
-        {% if st.last %}
+        <div class="card-head"><div><h2>Score por criterio</h2><p>Simulado con datos del portal de los últimos 180 días{% if score.uses_manual %} y la última evaluación manual{% endif %}, hasta definir el método de cálculo.</p></div><span class="sim-tag">Simulado</span></div>
         <div class="card-body">
           <ul class="criteria">
             {% for key, label, weight in SCORING_CRITERIA %}
-              {% set v = st.last[key] %}
+              {% set v = score[key] %}
               <li><div class="crit-head"><span>{{ label }} <small class="muted">({{ weight }}%)</small></span><strong>{{ v }}/5</strong></div>
-                <div class="crit-bar crit-{{ v }}" role="img" aria-label="{{ label }}: {{ v }} de 5"><i style="width: {{ v * 20 }}%"></i></div></li>
+                <div class="crit-bar crit-{{ v }}" role="img" aria-label="{{ label }}: {{ v }} de 5"><i style="width: {{ v * 20 }}%"></i></div>
+                <span class="crit-why">{{ score.why[key] }}</span></li>
             {% endfor %}
           </ul>
-          {% if st.last.comment %}<p class="muted" style="margin-top:12px">«{{ st.last.comment }}»</p>{% endif %}
+          {% if st.last %}<p class="muted" style="margin-top:12px;font-size:13px">Última evaluación manual: «{{ st.last.period }}», {{ st.last.score }} puntos ({{ st.last.category }}){% if st.last.comment %}: «{{ st.last.comment }}»{% endif %}</p>{% endif %}
         </div>
-        {% endif %}
       </section>
 
       <section class="card" id="evaluar">
-        <div class="card-head"><div><h2>Nueva evaluación</h2><p>Calificá cada criterio de 1 (muy malo) a 5 (excelente). El score se calcula solo.</p></div></div>
+        <div class="card-head"><div><h2>Nueva evaluación manual</h2><p>Calificá cada criterio de 1 (muy malo) a 5 (excelente). Queda registrada para el cálculo definitivo del score.</p></div></div>
         <form class="card-body" method="post" action="{{ url_for('staff_provider_evaluate', pid=p.id) }}" novalidate>
           <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <div class="field">
@@ -83,7 +82,7 @@
       </section>
 
       <section class="card">
-        <div class="card-head"><div><h2>Historial de evaluaciones</h2></div></div>
+        <div class="card-head"><div><h2>Historial de evaluaciones manuales</h2></div></div>
         <div class="table-wrap">
           <table class="table table-compact">
             <caption class="sr-only">Evaluaciones anteriores</caption>

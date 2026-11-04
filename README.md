@@ -129,7 +129,11 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
 - Estado para operar: **habilitado**, **operación restringida** (sin nuevas adjudicaciones,
   bloqueo de ingreso a yacimiento o documentación obligatoria vencida) o **bloqueado**
   (suspensión total). Los bloqueos se registran y se levantan con motivo e historial.
-- Los demás equipos ven el estado para operar en cada ticket, pero no el score. El proveedor
+- **Score visible para todos los equipos y el administrador** (bandeja, tickets, requisitos y
+  scoring), marcado como *simulado*: mientras se define el método de cálculo, se estima con datos
+  del portal de los últimos 180 días y la última evaluación manual. El cálculo vive en una sola
+  función (`app.provider_score`) para reemplazarlo cuando esté definido.
+- Los demás equipos ven el estado para operar en cada ticket. El proveedor
   ve un aviso si tiene un bloqueo vigente, sin el motivo ni el score.
 - Usuario del equipo: `agente.performance` (misma contraseña que los demás agentes).
 

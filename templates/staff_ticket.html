@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, status_badge, priority, team_tag, sla, avatar, contract_badge %}
-{% from "_scoring.html" import standing_badge, score_badge %}
+{% from "_scoring.html" import standing_badge, score_badge, sim_score %}
 {% block title %}{{ t.code }}{% endblock %}
 {% block main %}
 <div class="page" style="max-width:1320px">
@@ -120,10 +120,8 @@
           <a class="req-inline" href="{{ url_for('staff_requirements_provider', pid=p.id) }}">
             <span>Requisitos: <strong>{{ req_summary.done }} de {{ req_summary.total }}</strong></span>
             <span class="req-bar"><i style="width: {{ req_summary.pct }}%"></i></span><span>{{ req_summary.pct }}%</span></a>
-          {% if can_manage_providers() %}
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">{{ score_badge(standing.last, standing.trend) }}
-              <a class="btn btn-ghost btn-sm" href="{{ url_for('staff_provider_detail', pid=p.id) }}">Ver scoring</a></div>
-          {% endif %}
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">{{ sim_score(provider_score(p.id)) }}
+            {% if can_manage_providers() %}<a class="btn btn-ghost btn-sm" href="{{ url_for('staff_provider_detail', pid=p.id) }}">Ver scoring</a>{% endif %}</div>
         </div>
       </section>
 

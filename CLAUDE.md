@@ -24,7 +24,10 @@ Nombre del portal: **Mesa de Proveedores**. Nombre del asistente del chat: **MiP
 ## Permisos
 
 - Tipos de caso y SLA: los edita el administrador; los equipos solo los ven.
-- Scoring y bloqueos: Proveedores y Performance (`performance`) y el administrador.
+- Score: lo ven todos los equipos y el administrador (bandeja, tickets, requisitos, scoring). Por ahora es
+  **simulado** (`app.provider_score`): se estima con datos del portal hasta definir el método. Para el cálculo
+  real se reemplaza solo esa función. El proveedor nunca lo ve.
+- Evaluaciones manuales y bloqueos: Proveedores y Performance (`performance`) y el administrador.
 - Revisión de requisitos: administrador, Alta y Documentación (`maestro`) y Proveedores y
   Performance.
 
