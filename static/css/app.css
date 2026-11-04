@@ -588,3 +588,18 @@ dialog::backdrop { background: rgba(10, 14, 22, .45); }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 #chat-meta { margin-top: 0; }
+
+/* ---------- Documentación del proveedor (Oil&Gas) ---------- */
+.nav .count-warn { background: var(--warning); color: #fff; }
+.badge-doc-vigente { background: var(--success-soft); color: var(--success); }
+.badge-doc-por_vencer { background: var(--warning-soft); color: var(--warning); }
+.badge-doc-vencido, .badge-vencido-hard { background: var(--danger-soft); color: var(--danger); }
+.badge-doc-permanente { background: var(--neutral-soft); color: var(--text-3); }
+.t-danger { color: var(--danger); } .t-warn { color: var(--warning); } .t-ok { color: var(--success); }
+.tag-block { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-2);
+  background: var(--surface-3); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; }
+.doc-table .subject { white-space: normal; }
+.doc-mini { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
+.doc-mini li { display: flex; gap: 10px; align-items: flex-start; }
+.doc-mini li small { display: block; color: var(--text-3); font-size: 12px; }
+.doc-alert-strip { max-width: 780px; margin: 0 auto 10px; }
