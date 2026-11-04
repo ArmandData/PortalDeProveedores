@@ -30,12 +30,14 @@
   };
 
   const SUGGESTIONS = [
-    "¿Cuándo me pagan una factura?",
-    "Me rechazaron una factura",
-    "Tengo un problema con una entrega",
-    "Necesito cambiar mis datos bancarios",
-    "Necesito un certificado de retención",
+    "¿Cuándo cobro la factura del último certificado?",
+    "Me rechazaron un certificado de servicios",
+    "Retuvieron material en la base por inspección",
+    "Necesito renovar una póliza para ingresar a yacimiento",
+    "Quiero reportar un incidente HSE en locación",
+    "Solicito ajuste de tarifa por polinómica",
   ];
+  const docsBlocking = Number(app.dataset.docsBlocking || 0);
 
   // ---------- utilidades ----------
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -228,10 +230,13 @@
 
   function renderWelcome() {
     const c = state.contract;
-    const ctx = c ? `sobre el contrato **${c.numero}** (${c.objeto}).` : "que no está relacionada con un contrato.";
+    const ctx = c ? `sobre el contrato **${c.numero}** (${c.objeto}${c.yacimiento ? `, ${c.yacimiento}` : ""}).` : "que no está relacionada con un contrato.";
     els.inner.innerHTML = "";
     const intro = messageEl({ role: "assistant", body: `¡Perfecto! Contame tu consulta o reclamo ${ctx}\n\nPodés escribir con tus palabras y adjuntar facturas, remitos u otros documentos. Si hace falta, lo derivo al equipo indicado y te doy un número de ticket para el seguimiento.`, time: "ahora" });
     els.inner.appendChild(intro);
+    if (docsBlocking) {
+      els.inner.appendChild(messageEl({ role: "system", body: `Tenés ${docsBlocking} documento${docsBlocking > 1 ? "s" : ""} obligatorio${docsBlocking > 1 ? "s" : ""} vencido${docsBlocking > 1 ? "s" : ""} que bloquea${docsBlocking > 1 ? "n" : ""} el ingreso a yacimiento. Revisalo en **Mi documentación**.` }));
+    }
     const sug = document.createElement("div");
     sug.className = "welcome";
     sug.innerHTML = `<div class="suggestions" aria-label="Sugerencias">${SUGGESTIONS.map((s) => `<button type="button" class="suggestion">${esc(s)}</button>`).join("")}</div>`;
@@ -246,6 +251,8 @@
     els.inner.appendChild(sug);
     setComposerEnabled(true, `PDF, Word, Excel, TXT, HTML o imágenes · hasta ${MAX_MB} MB c/u`);
     renderCase(null);
+    const prefill = app.dataset.prefill;
+    if (prefill) { els.input.value = prefill; app.dataset.prefill = ""; autosize(); updateSendState(); }
     els.input.focus();
   }
 
@@ -270,6 +277,7 @@
       <dt>Número</dt><dd class="mono"><a href="/contratos/${encodeURIComponent(c.numero)}">${esc(c.numero)}</a></dd>
       <dt>Estado</dt><dd><span class="badge badge-${esc(c.status)}">${esc(c.status_label)}</span></dd>
       <dt>Objeto</dt><dd>${esc(c.objeto)}</dd>
+      ${c.yacimiento ? `<dt>Yacimiento</dt><dd>${esc(c.yacimiento)}</dd>` : ""}
       <dt>Vigencia</dt><dd>${esc(c.vigencia)}</dd>
       <dt>Pago</dt><dd>${esc(c.condicion_pago || "—")}</dd></dl></section>`;
   }
@@ -289,6 +297,7 @@
           <dt>Prioridad</dt><dd><span class="prio prio-${esc(ticket.priority)}"><span class="bars"><i></i><i></i><i></i></span>${esc(ticket.priority_label)}</span></dd>
           <dt>Plazo</dt><dd><span class="sla sla-${esc(ticket.sla_state)}">${esc(ticket.sla_label)}</span></dd>
           ${ticket.reference ? `<dt>Referencia</dt><dd class="mono">${esc(ticket.reference)}</dd>` : ""}
+          ${ticket.location ? `<dt>Locación</dt><dd>${esc(ticket.location)}</dd>` : ""}
           <dt>Creado</dt><dd>${esc(ticket.created_at)}</dd></dl></section>
         ${contractBlock(c)}`;
       els.caseStrip.innerHTML = `${icon("ticket", "icon-sm")}<span class="mono">${esc(ticket.code)}</span>
@@ -542,8 +551,8 @@
     loadConversation(state.convId);
   } else {
     const pre = app.dataset.preselect;
-    if (pre) {
-      state.contract = JSON.parse(pre);
+    if (pre || app.dataset.preselectNone) {
+      state.contract = pre ? JSON.parse(pre) : null;
       renderPin();
       renderWelcome();
     } else {
