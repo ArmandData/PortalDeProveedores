@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, contract_badge %}
+{% block title %}Asistente{% endblock %}
+{% block main %}
+<div class="chat-layout" id="chat-app"
+     data-conversation="{{ active.id if active else '' }}"
+     data-accept="{{ accept }}" data-max-mb="{{ max_mb }}" data-max-files="{{ max_files }}"
+     data-preselect="{{ preselect | tojson | forceescape if preselect else '' }}"
+     data-contact="{{ nav_provider.contacto_nombre.split(' ')[0] if nav_provider.contacto_nombre else '' }}">
+
+  <!-- Lista de conversaciones -->
+  <aside class="conv-pane" aria-label="Tus conversaciones">
+    <div class="conv-pane-head">
+      <div class="row">
+        <h2>Conversaciones</h2>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('assistant') }}" id="new-conv">{{ icon('plus', 'icon-sm') }}Nueva</a>
+      </div>
+      <div class="input-group">
+        {{ icon('search', 'icon-sm') }}
+        <label class="sr-only" for="conv-search">Buscar conversación</label>
+        <input class="input" id="conv-search" type="search" placeholder="Buscar por asunto, ticket o contrato">
+      </div>
+    </div>
+    <ul class="conv-list" id="conv-list">
+      {% for c in conversations %}
+        <li class="conv-item {% if c.unread %}unread{% endif %}" data-search="{{ (c.title ~ ' ' ~ (c.code or '') ~ ' ' ~ (c.contract_numero or '')) | lower }}">
+          <a href="{{ url_for('assistant', c=c.id) }}" {% if active and active.id == c.id %}aria-current="true"{% endif %} data-conv="{{ c.id }}">
+            <span class="t"><strong>{{ c.title }}</strong><time datetime="{{ c.updated_at }}">{{ c.updated_at | relativa }}</time></span>
+            <span class="p">{{ (c.last_body or '') | replace('**', '') | truncate(80) }}</span>
+            {% if c.code or c.contract_numero %}
+            <span class="m">
+              {% if c.code %}<span class="badge badge-{{ c.status }}">{{ STATUS_LABELS[c.status] }}</span><span class="mono">{{ c.code }}</span>{% endif %}
+              {% if c.contract_numero %}<span class="chip-contract">{{ c.contract_numero }}</span>{% endif %}
+            </span>
+            {% endif %}
+          </a>
+        </li>
+      {% else %}
+        <li class="conv-empty">Todavía no tenés conversaciones. Empezá una nueva para hacer tu primera consulta.</li>
+      {% endfor %}
+      <li class="conv-empty" id="conv-noresults" hidden>No hay conversaciones que coincidan.</li>
+    </ul>
+  </aside>
+
+  <!-- Chat -->
+  <section class="chat-pane" id="chat-pane" aria-label="Chat con el asistente">
+    <header class="chat-head">
+      <button class="btn btn-ghost icon-btn back-btn" type="button" id="back-to-list" aria-label="Ver conversaciones">{{ icon('back') }}</button>
+      <span class="avatar avatar-bot" aria-hidden="true">{{ icon('sparkles', 'icon-sm') }}</span>
+      <div class="title">
+        <h1 id="chat-title">{{ active.title if active else 'Nueva consulta' }}</h1>
+        <div class="meta">
+          <span id="contract-pin-slot"></span>
+          <span id="chat-meta" class="meta"><span>Asistente del portal{% if not ai_enabled() %} · modo básico{% endif %}</span></span>
+        </div>
+      </div>
+    </header>
+    <div class="case-strip" id="case-strip" hidden></div>
+
+    <div class="messages" id="messages" tabindex="0">
+      <div class="messages-inner" id="messages-inner" role="log" aria-live="polite" aria-relevant="additions" aria-label="Mensajes"></div>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer-error" id="composer-error" hidden></div>
+      <form class="composer" id="composer" autocomplete="off">
+        <div class="pending-files" id="pending-files" hidden aria-label="Archivos para enviar"></div>
+        <label class="sr-only" for="msg-input">Escribí tu mensaje</label>
+        <textarea id="msg-input" rows="1" maxlength="8000" placeholder="Escribí tu consulta o reclamo…" disabled></textarea>
+        <div class="composer-bar">
+          <input type="file" id="file-input" multiple accept="{{ accept }}" hidden>
+          <button class="btn btn-ghost icon-btn" type="button" id="attach-btn" aria-label="Adjuntar archivos" title="Adjuntar archivos (PDF, Word, Excel, TXT, HTML, imágenes)" disabled>{{ icon('clip') }}</button>
+          <span class="composer-hint" id="composer-hint">PDF, Word, Excel, TXT, HTML o imágenes · hasta {{ max_mb }} MB c/u</span>
+          <span class="spacer"></span>
+          <button class="btn btn-primary send-btn" type="submit" id="send-btn" aria-label="Enviar mensaje" disabled>{{ icon('send') }}</button>
+        </div>
+      </form>
+      <p class="composer-foot"><kbd>Enter</kbd> para enviar · <kbd>Shift</kbd>+<kbd>Enter</kbd> para nueva línea</p>
+    </div>
+    <div class="drop-overlay" id="drop-overlay" hidden>
+      <div>{{ icon('upload', 'icon-lg') }}<strong>Soltá los archivos para adjuntarlos</strong><span>PDF, Word, Excel, TXT, HTML o imágenes</span></div>
+    </div>
+  </section>
+
+  <!-- Panel del caso -->
+  <aside class="case-pane" id="case-pane" aria-label="Detalle del caso"></aside>
+</div>
+
+<!-- Selector de contrato (reutilizado en el diálogo "Cambiar") -->
+<template id="contract-picker-tpl">
+  <div class="picker-search input-group" {% if contracts | length < 5 %}hidden{% endif %}>
+    {{ icon('search', 'icon-sm') }}
+    <label class="sr-only" for="contract-search">Buscar contrato</label>
+    <input class="input" type="search" data-contract-search placeholder="Buscar por número u objeto del contrato">
+  </div>
+  <div class="contract-grid" role="list">
+    {% for c in contracts %}
+      <div role="listitem">
+      <button type="button" class="contract-option {% if c.status in ('vencido', 'rescindido') %}is-dim{% endif %}"
+              data-contract='{{ {"id": c.id, "numero": c.numero, "objeto": c.objeto, "vigencia": c.vigencia, "status": c.status, "status_label": c.status_label, "monto_fmt": c.monto_fmt, "condicion_pago": c.condicion_pago, "team_name": c.team_name, "tipo_label": c.tipo_label, "days_left": c.days_left} | tojson | forceescape }}'
+              data-search="{{ (c.numero ~ ' ' ~ c.objeto) | lower }}" aria-pressed="false">
+        <span class="top"><span class="num">{{ c.numero }}</span>{{ contract_badge(c.status) }}</span>
+        <span class="obj">{{ c.objeto }}</span>
+        <span class="vig">{{ icon('calendar', 'icon-sm') }}{{ c.vigencia }}</span>
+      </button>
+      </div>
+    {% endfor %}
+    <div role="listitem">
+    <button type="button" class="contract-option none" data-contract="none" data-search="no relacionado sin contrato otro" aria-pressed="false">
+      <strong>No está relacionado con un contrato</strong>
+      <span>Por ejemplo: alta, datos bancarios o impuestos</span>
+    </button>
+    </div>
+    <p class="picker-empty" data-picker-empty hidden>No encontramos contratos con ese texto.</p>
+  </div>
+</template>
+
+<dialog id="contract-dialog" aria-labelledby="contract-dialog-title">
+  <div class="dialog-head">
+    <h2 id="contract-dialog-title">Cambiar contrato de la conversación</h2>
+    <button class="btn btn-ghost icon-btn btn-sm" type="button" data-close-dialog aria-label="Cerrar">{{ icon('x', 'icon-sm') }}</button>
+  </div>
+  <div class="dialog-body" id="contract-dialog-body"></div>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/chat.js') }}?v=1" defer></script>{% endblock %}

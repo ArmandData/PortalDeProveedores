@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, contract_badge, status_badge, team_tag %}
+{% block title %}Contrato {{ c.numero }}{% endblock %}
+{% block main %}
+<div class="page">
+  <div class="breadcrumb"><a href="{{ url_for('contracts') }}">Mis contratos</a>{{ icon('chevron', 'icon-sm') }}<span>{{ c.numero }}</span></div>
+  <div class="page-head">
+    <div>
+      <h1 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="mono">{{ c.numero }}</span>{{ contract_badge(c.status) }}</h1>
+      <p>{{ c.objeto }}</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      {% if c.archivo %}<a class="btn btn-secondary" href="{{ url_for('contract_pdf', numero=c.numero) }}">{{ icon('download', 'icon-sm') }}Descargar PDF</a>{% endif %}
+      <a class="btn btn-primary" href="{{ url_for('assistant', contrato=c.id) }}">{{ icon('chat', 'icon-sm') }}Iniciar consulta sobre este contrato</a>
+    </div>
+  </div>
+
+  {% if c.status == 'por_vencer' %}
+    <div class="alert alert-warning" style="margin-bottom:16px">{{ icon('clock') }}<span>Este contrato vence en <strong>{{ c.days_left }} días</strong>. Si necesitás renovarlo, iniciá una consulta.</span></div>
+  {% elif c.status == 'vencido' %}
+    <div class="alert alert-info" style="margin-bottom:16px">{{ icon('alert') }}<span>Este contrato está vencido. Igual podés consultar por facturas o pagos pendientes asociados.</span></div>
+  {% endif %}
+
+  <div class="detail-grid">
+    <div class="stack">
+      <section class="card">
+        <div class="card-head"><h2>Datos del contrato</h2></div>
+        <div class="card-body">
+          <dl class="dl">
+            <dt>Tipo</dt><dd>{{ c.tipo_label }}</dd>
+            <dt>Objeto</dt><dd>{{ c.objeto }}</dd>
+            <dt>Vigencia</dt><dd>{{ c.vigencia }}</dd>
+            <dt>Monto total</dt><dd>{{ c.monto_fmt }}</dd>
+            <dt>Moneda</dt><dd>{{ c.moneda }}</dd>
+            <dt>Condición de pago</dt><dd>{{ c.condicion_pago or '—' }}</dd>
+            <dt>Responsable interno</dt><dd>{{ c.responsable_interno or '—' }}</dd>
+            <dt>Equipo a cargo</dt><dd>{{ c.team_name or '—' }}</dd>
+          </dl>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><div><h2>Tickets de este contrato</h2><p>{{ tickets | length }} en total</p></div></div>
+        {% if tickets %}
+        <div class="table-wrap"><table class="table">
+          <caption class="sr-only">Tickets asociados al contrato</caption>
+          <thead><tr><th scope="col">Ticket</th><th scope="col">Estado</th><th scope="col" class="hide-sm">Equipo</th></tr></thead>
+          <tbody>
+          {% for t in tickets %}
+            <tr data-href="{{ url_for('ticket_detail', code=t.code) }}">
+              <td><a class="subject" href="{{ url_for('ticket_detail', code=t.code) }}">{{ t.subject }}</a>
+                <span class="sub"><span class="mono">{{ t.code }}</span>· {{ t.updated_at | relativa }}</span></td>
+              <td>{{ status_badge(t.status) }}</td>
+              <td class="hide-sm">{{ team_tag(t.team_name, t.team_color) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody></table></div>
+        {% else %}
+          <div class="empty"><p>No hay consultas ni reclamos sobre este contrato.</p></div>
+        {% endif %}
+      </section>
+    </div>
+    <aside class="card card-pad">
+      <h2 style="margin-bottom:14px">Vigencia</h2>
+      <div class="timeline-bar {% if c.status == 'por_vencer' %}warn{% elif c.status in ('vencido','rescindido') %}done{% endif %}" role="img"
+           aria-label="{% if c.days_left >= 0 %}Quedan {{ c.days_left }} días{% else %}Finalizado{% endif %}">
+        <i style="width: {{ c.progress }}%"></i></div>
+      <p class="muted" style="font-size:13px;margin-top:8px">{% if c.days_left >= 0 %}Quedan <strong>{{ c.days_left }}</strong> días · finaliza el {{ (c.fecha_fin ~ ' 00:00:00') | fecha(False) }}{% else %}Finalizó hace {{ -c.days_left }} días{% endif %}</p>
+      <div class="lock-note">{{ icon('shield', 'icon-sm') }}<span>Las condiciones del contrato solo pueden modificarse mediante una adenda gestionada por Compras.</span></div>
+    </aside>
+  </div>
+</div>
+{% endblock %}

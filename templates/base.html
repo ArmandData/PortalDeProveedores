@@ -1,0 +1,78 @@
+{% from "_macros.html" import icon, sprite, avatar %}<!doctype html>
+<html lang="es-AR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}Portal de Proveedores{% endblock %} · {{ company }}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232952cc'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=1">
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=1" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+{{ sprite() }}
+<a href="#main" class="skip-link">Saltar al contenido</a>
+{% block body %}
+<div class="shell" id="shell">
+  <aside class="sidebar" id="sidebar" aria-label="Navegación principal">
+    <a class="brand" href="{{ url_for('home') }}">
+      <span class="brand-mark" aria-hidden="true">P</span>
+      <span class="brand-name">Portal de Proveedores<small>{{ company }}</small></span>
+    </a>
+    {% set ep = request.endpoint %}
+    <nav class="nav">
+      {% if g.user.role == 'provider' %}
+        <a href="{{ url_for('assistant') }}" {% if ep == 'assistant' %}aria-current="page"{% endif %}>{{ icon('chat') }}Asistente</a>
+        <a href="{{ url_for('tickets') }}" {% if ep == 'tickets' %}aria-current="page"{% endif %}>{{ icon('ticket') }}Mis tickets
+          {% if nav_unread %}<span class="count" aria-label="{{ nav_unread }} respuestas nuevas">{{ nav_unread }}</span>{% endif %}</a>
+        <a href="{{ url_for('contracts') }}" {% if ep in ('contracts', 'contract_detail') %}aria-current="page"{% endif %}>{{ icon('contract') }}Mis contratos</a>
+        <a href="{{ url_for('profile') }}" {% if ep == 'profile' %}aria-current="page"{% endif %}>{{ icon('user') }}Mi perfil</a>
+      {% else %}
+        <span class="nav-label">Mesa de ayuda</span>
+        <a href="{{ url_for('staff_inbox') }}" {% if ep in ('staff_inbox', 'staff_ticket_detail') %}aria-current="page"{% endif %}>{{ icon('inbox') }}Bandeja de tickets
+          {% if nav_open %}<span class="count" aria-label="{{ nav_open }} abiertos">{{ nav_open }}</span>{% endif %}</a>
+        <a href="{{ url_for('staff_inbox', estado='mios') }}">{{ icon('user') }}Asignados a mí</a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-foot">
+      {% if g.user.role == 'provider' %}
+        <a class="user-card" href="{{ url_for('profile') }}">
+          {{ avatar(nav_provider) }}
+          <span class="who"><strong>{{ nav_provider.nombre_fantasia or nav_provider.razon_social }}</strong><span>{{ g.user.full_name }}</span></span>
+        </a>
+      {% else %}
+        <div class="user-card">
+          <span class="avatar avatar-team">{{ g.user.full_name | iniciales }}</span>
+          <span class="who"><strong>{{ g.user.full_name }}</strong><span>{{ nav_team.name if nav_team else 'Administrador' }}</span></span>
+        </div>
+      {% endif %}
+      <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn btn-ghost btn-sm btn-block" type="submit">{{ icon('logout', 'icon-sm') }}Cerrar sesión</button>
+      </form>
+    </div>
+  </aside>
+  <div class="nav-scrim" id="nav-scrim" hidden></div>
+  <div class="main">
+    <header class="topbar">
+      <button class="btn btn-ghost icon-btn" type="button" id="nav-toggle" aria-controls="sidebar" aria-expanded="false" aria-label="Abrir menú">{{ icon('menu') }}</button>
+      <a class="brand" href="{{ url_for('home') }}"><span class="brand-mark" aria-hidden="true">P</span><span class="brand-name">Portal de Proveedores</span></a>
+    </header>
+    <main id="main" tabindex="-1">{% block main %}{% endblock %}</main>
+  </div>
+</div>
+{% endblock %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <div class="flash-stack" role="status" aria-live="polite">
+    {% for cat, msg in messages %}
+      <div class="flash flash-{{ cat }}">{{ icon('check-circle' if cat == 'success' else 'alert') }}<p>{{ msg }}</p>
+        <button type="button" data-dismiss aria-label="Cerrar aviso">{{ icon('x', 'icon-sm') }}</button></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endwith %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, status_badge, priority, team_tag, sla, avatar, contract_badge %}
+{% block title %}{{ t.code }}{% endblock %}
+{% block main %}
+<div class="page" style="max-width:1320px">
+  <div class="breadcrumb"><a href="{{ url_for('staff_inbox') }}">Bandeja</a>{{ icon('chevron', 'icon-sm') }}<span class="mono">{{ t.code }}</span></div>
+  <div class="page-head">
+    <div>
+      <h1>{{ t.subject }}</h1>
+      <p style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="mono">{{ t.code }}</span>{{ status_badge(t.status, staff=True) }}{{ priority(t.priority) }}{{ sla(t) }}
+        {% if contract %}<span class="chip-contract">{{ contract.numero }}</span>{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <div class="staff-grid">
+    <div class="stack">
+      <section class="ai-box">
+        <div class="lbl">{{ icon('sparkles', 'icon-sm') }}Resumen automático{% if t.ai_confidence is not none %} · confianza {{ (t.ai_confidence * 100) | round | int }}%{% endif %}</div>
+        <p>{{ t.summary }}</p>
+        {% if t.reference %}<p style="margin-top:6px" class="muted">Referencias: <span class="mono">{{ t.reference }}</span></p>{% endif %}
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h2>Conversación con el proveedor</h2><p>Las notas internas no son visibles para el proveedor.</p></div></div>
+        <div class="thread" id="thread">
+          {% for m in messages %}
+            {% if m.role == 'system' %}
+              <div class="msg msg-system"><div class="bubble">{{ m.body | md }}</div></div>
+            {% else %}
+              <div class="msg {% if m.role == 'agent' %}msg-me{% if m.internal %} msg-internal{% endif %}{% elif m.role == 'assistant' %}msg-bot{% else %}msg-agent{% endif %}">
+                {% if m.role == 'provider' %}{{ avatar(p) }}{% elif m.role == 'assistant' %}<span class="avatar avatar-bot" aria-hidden="true">{{ icon('sparkles', 'icon-sm') }}</span>{% endif %}
+                <div class="msg-body">
+                  <div class="msg-meta"><strong>{% if m.role == 'provider' %}{{ p.razon_social }}{% elif m.role == 'assistant' %}Asistente IA{% else %}{{ m.author }}{% if m.internal %} · Nota interna{% endif %}{% endif %}</strong><time>· {{ m.time }}</time></div>
+                  {% if m.body %}<div class="bubble" {% if m.role == 'agent' and not m.internal %}style="background:var(--bubble-me);color:var(--bubble-me-text)"{% elif m.internal %}style="color:var(--text)"{% endif %}>{{ m.body | md }}</div>{% endif %}
+                  {% if m.attachments %}<div class="files">{% for a in m.attachments %}
+                    <a class="file-card" href="{{ a.url }}" target="_blank" rel="noopener"><span class="ext ext-{{ a.ext }}">{{ a.ext[:4] }}</span>
+                      <span class="ftxt"><span class="fname">{{ a.name }}</span><span class="fsize">{{ a.size }}</span></span></a>{% endfor %}</div>{% endif %}
+                </div>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <form class="reply-box" method="post" action="{{ url_for('staff_reply', code=t.code) }}" enctype="multipart/form-data">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <div class="reply-tabs" role="radiogroup" aria-label="Tipo de mensaje">
+            <label><input type="radio" name="internal" value="0" checked><span>Responder al proveedor</span></label>
+            <label><input type="radio" name="internal" value="1"><span>Nota interna</span></label>
+          </div>
+          <label class="sr-only" for="reply-text">Mensaje</label>
+          <textarea class="textarea" id="reply-text" name="text" placeholder="Escribí la respuesta…" maxlength="8000"></textarea>
+          <div class="reply-actions">
+            <div class="left">
+              <label class="btn btn-ghost btn-sm" for="reply-files">{{ icon('clip', 'icon-sm') }}Adjuntar</label>
+              <input class="sr-only" id="reply-files" name="files" type="file" multiple accept="{{ accept }}" data-file-names="reply-file-names">
+              <span class="muted" id="reply-file-names" style="font-size:13px"></span>
+            </div>
+            <div class="left">
+              <label for="reply-status" class="muted" style="font-size:13px">Después de enviar:</label>
+              <select class="select" id="reply-status" name="status" style="width:auto;min-height:36px">
+                <option value="en_curso" {% if t.status in ('nuevo','en_curso') %}selected{% endif %}>Mantener en curso</option>
+                <option value="esperando_proveedor" {% if t.status == 'esperando_proveedor' %}selected{% endif %}>Esperar respuesta del proveedor</option>
+                <option value="resuelto">Marcar como resuelto</option>
+              </select>
+              <button class="btn btn-primary" type="submit" data-loading-text="Enviando…">{{ icon('send', 'icon-sm') }}Enviar</button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <aside class="stack">
+      <section class="card">
+        <div class="card-head"><h2>Gestión</h2></div>
+        <form class="card-body" method="post" action="{{ url_for('staff_update', code=t.code) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <div class="field"><label for="u-status">Estado</label>
+            <select class="select" id="u-status" name="status">{% for k, v in STATUS_LABELS_STAFF.items() %}<option value="{{ k }}" {% if t.status == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="u-prio">Prioridad</label>
+            <select class="select" id="u-prio" name="priority">{% for k, v in PRIORITY_LABELS.items() %}<option value="{{ k }}" {% if t.priority == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="u-team">Equipo</label>
+            <select class="select" id="u-team" name="team_id">{% for tm in teams %}<option value="{{ tm.id }}" {% if t.team_id == tm.id %}selected{% endif %}>{{ tm.name }}</option>{% endfor %}</select>
+            <span class="hint">Al derivar, el ticket queda sin asignar en el nuevo equipo.</span></div>
+          <div class="field"><label for="u-assignee">Asignado a</label>
+            <select class="select" id="u-assignee" name="assignee_id"><option value="0">Sin asignar</option>{% for a in agents %}<option value="{{ a.id }}" {% if t.assignee_id == a.id %}selected{% endif %}>{{ a.full_name }}</option>{% endfor %}</select></div>
+          <button class="btn btn-secondary btn-block" type="submit">Guardar cambios</button>
+        </form>
+      </section>
+
+      {% if contract %}
+      <section class="card">
+        <div class="card-head"><h2>Contrato</h2>{{ contract_badge(contract.status) }}</div>
+        <div class="card-body"><dl class="dl">
+          <dt>Número</dt><dd class="mono">{{ contract.numero }}</dd>
+          <dt>Objeto</dt><dd>{{ contract.objeto }}</dd>
+          <dt>Vigencia</dt><dd>{{ contract.vigencia }}</dd>
+          <dt>Monto</dt><dd>{{ contract.monto_fmt }}</dd>
+          <dt>Pago</dt><dd>{{ contract.condicion_pago or '—' }}</dd>
+          <dt>Responsable</dt><dd>{{ contract.responsable_interno or '—' }}</dd>
+        </dl>
+        {% if contract.archivo %}<a class="btn btn-ghost btn-sm" style="margin-top:10px" href="{{ url_for('contract_pdf', numero=contract.numero) }}">{{ icon('download', 'icon-sm') }}Ver PDF</a>{% endif %}
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="card">
+        <div class="card-head"><h2>Proveedor</h2></div>
+        <div class="card-body">
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">{{ avatar(p) }}<div><strong>{{ p.razon_social }}</strong><div class="muted mono" style="font-size:13px">CUIT {{ p.cuit }}</div></div></div>
+          <dl class="dl">
+            <dt>IVA</dt><dd>{{ p.condicion_iva }}</dd>
+            <dt>Contacto</dt><dd>{{ p.contacto_nombre or '—' }}{% if p.contacto_cargo %} · {{ p.contacto_cargo }}{% endif %}</dd>
+            <dt>E-mail</dt><dd>{{ p.contacto_email or p.email }}</dd>
+            <dt>Teléfono</dt><dd>{{ p.contacto_telefono or p.telefono or '—' }}</dd>
+            <dt>Pago</dt><dd>{{ p.condicion_pago or '—' }}</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Historial</h2></div>
+        <div class="card-body">
+          <ul class="events">
+            {% for e in events %}<li><span>{{ e.detail or e.event }}</span><time>{{ e.full_name or 'Sistema' }} · {{ e.created_at | fecha }}</time></li>
+            {% else %}<li class="muted">Sin movimientos.</li>{% endfor %}
+          </ul>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/staff.js') }}?v=1" defer></script>{% endblock %}

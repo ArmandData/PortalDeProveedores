@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, status_badge, priority, team_tag, sla %}
+{% block title %}Mis tickets{% endblock %}
+{% block main %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Mis tickets</h1>
+      <p>Seguí el estado de tus consultas y reclamos. Para responder, abrí el ticket y escribí en la conversación.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('assistant') }}">{{ icon('plus', 'icon-sm') }}Nueva consulta</a>
+  </div>
+
+  {% if counts.esperando %}
+  <div class="alert alert-warning" role="status" style="margin-bottom:16px">{{ icon('alert') }}
+    <span>Tenés <strong>{{ counts.esperando }}</strong> ticket{{ 's' if counts.esperando > 1 }} esperando tu respuesta.</span></div>
+  {% endif %}
+
+  <form class="toolbar" method="get" role="search">
+    <nav class="tabs" aria-label="Filtrar por estado">
+      {% for key, label, n in [('abiertos', 'Abiertos', counts.abiertos), ('cerrados', 'Resueltos', counts.cerrados), ('todos', 'Todos', counts.todos)] %}
+        <a href="{{ url_for('tickets', estado=key, q=q or None) }}" {% if status == key %}aria-current="true"{% endif %}>{{ label }} <span class="n">{{ n or 0 }}</span></a>
+      {% endfor %}
+    </nav>
+    <input type="hidden" name="estado" value="{{ status }}">
+    <div class="input-group grow">
+      {{ icon('search', 'icon-sm') }}
+      <label class="sr-only" for="q">Buscar tickets</label>
+      <input class="input" id="q" name="q" type="search" value="{{ q }}" placeholder="Buscar por ID, asunto, factura, OC o contrato">
+    </div>
+  </form>
+
+  <div class="card">
+    {% if tickets %}
+    <div class="table-wrap">
+      <table class="table">
+        <caption class="sr-only">Listado de tickets</caption>
+        <thead><tr><th scope="col">Ticket</th><th scope="col">Estado</th><th scope="col" class="hide-sm">Equipo</th><th scope="col" class="hide-sm">Prioridad</th><th scope="col" class="hide-sm">Actualizado</th></tr></thead>
+        <tbody>
+        {% for t in tickets %}
+          <tr data-href="{{ url_for('ticket_detail', code=t.code) }}">
+            <td>
+              <a class="subject" href="{{ url_for('ticket_detail', code=t.code) }}">{% if t.unread %}<span class="unread-dot" title="Respuesta nueva"></span> {% endif %}{{ t.subject }}</a>
+              <span class="sub"><span class="mono">{{ t.code }}</span>·<span>{{ 'Reclamo' if t.kind == 'reclamo' else 'Consulta' }}</span>
+                {% if t.contract_numero %}<span class="chip-contract">{{ t.contract_numero }}</span>{% endif %}
+                {% if t.reference %}<span>· {{ t.reference }}</span>{% endif %}</span>
+            </td>
+            <td>{{ status_badge(t.status) }}<div style="margin-top:4px">{{ sla(t) }}</div></td>
+            <td class="hide-sm">{{ team_tag(t.team_name, t.team_color) }}</td>
+            <td class="hide-sm">{{ priority(t.priority) }}</td>
+            <td class="hide-sm nowrap muted">{{ t.updated_at | relativa }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <div class="icon-wrap">{{ icon('ticket') }}</div>
+      {% if q %}
+        <h3>No encontramos tickets con «{{ q }}»</h3><p>Probá con otro número de ticket, factura u orden de compra.</p>
+        <a class="btn btn-secondary" href="{{ url_for('tickets', estado=status) }}">Limpiar búsqueda</a>
+      {% elif status == 'abiertos' %}
+        <h3>No tenés tickets abiertos</h3><p>Cuando hagas una consulta o reclamo que necesite a un equipo, el ticket va a aparecer acá.</p>
+        <a class="btn btn-primary" href="{{ url_for('assistant') }}">Hacer una consulta</a>
+      {% else %}
+        <h3>Todavía no hay tickets</h3><p>Empezá una conversación con el asistente.</p>
+        <a class="btn btn-primary" href="{{ url_for('assistant') }}">Hacer una consulta</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

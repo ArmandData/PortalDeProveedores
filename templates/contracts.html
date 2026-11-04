@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, contract_badge %}
+{% block title %}Mis contratos{% endblock %}
+{% block main %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Mis contratos</h1>
+      <p>Contratos vigentes e históricos a nombre de tu empresa. Desde cada uno podés iniciar una consulta.</p>
+    </div>
+  </div>
+
+  <form class="toolbar" method="get" role="search">
+    <nav class="tabs" aria-label="Filtrar por estado">
+      <a href="{{ url_for('contracts', q=q or None) }}" {% if not status %}aria-current="true"{% endif %}>Todos <span class="n">{{ counts.todos }}</span></a>
+      {% for key, label in CONTRACT_STATUS_LABELS.items() if counts[key] %}
+        <a href="{{ url_for('contracts', estado=key, q=q or None) }}" {% if status == key %}aria-current="true"{% endif %}>{{ label }} <span class="n">{{ counts[key] }}</span></a>
+      {% endfor %}
+    </nav>
+    {% if status %}<input type="hidden" name="estado" value="{{ status }}">{% endif %}
+    <div class="input-group grow">
+      {{ icon('search', 'icon-sm') }}
+      <label class="sr-only" for="q">Buscar contratos</label>
+      <input class="input" id="q" name="q" type="search" value="{{ q }}" placeholder="Buscar por número u objeto">
+    </div>
+  </form>
+
+  {% if contracts %}
+  <div class="contract-cards">
+    {% for c in contracts %}
+      <a class="card contract-card {% if c.status in ('vencido', 'rescindido') %}is-dim{% endif %}" href="{{ url_for('contract_detail', numero=c.numero) }}">
+        <span class="top"><span class="num">{{ c.numero }}</span>{{ contract_badge(c.status) }}</span>
+        <span class="obj">{{ c.objeto }}</span>
+        <span class="facts">
+          <span><span>Tipo</span>{{ c.tipo_label }}</span>
+          <span><span>Monto</span>{{ c.monto_fmt }}</span>
+          <span><span>Vigencia</span>{{ c.vigencia }}</span>
+          <span><span>Condición de pago</span>{{ c.condicion_pago or '—' }}</span>
+        </span>
+        <span class="timeline-bar {% if c.status == 'por_vencer' %}warn{% elif c.status in ('vencido','rescindido') %}done{% endif %}" aria-hidden="true"><i style="width: {{ c.progress }}%"></i></span>
+        <span class="foot">
+          <span>{% if c.status == 'por_vencer' %}<strong style="color:var(--warning)">Vence en {{ c.days_left }} días</strong>{% elif c.status == 'vigente' %}Vence en {{ c.days_left }} días{% else %}Finalizado{% endif %}</span>
+          <span>{% if open_by_contract.get(c.id) %}{{ icon('ticket', 'icon-sm') }} {{ open_by_contract[c.id] }} abierto{{ 's' if open_by_contract[c.id] > 1 }}{% else %}Sin tickets abiertos{% endif %}</span>
+        </span>
+      </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card"><div class="empty">
+    <div class="icon-wrap">{{ icon('contract') }}</div>
+    <h3>{% if q or status %}No hay contratos que coincidan{% else %}No tenés contratos registrados{% endif %}</h3>
+    <p>{% if q or status %}Probá con otro filtro o búsqueda.{% else %}Si creés que es un error, hacé una consulta al equipo de Alta y Datos de Proveedor.{% endif %}</p>
+    {% if q or status %}<a class="btn btn-secondary" href="{{ url_for('contracts') }}">Ver todos</a>{% endif %}
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

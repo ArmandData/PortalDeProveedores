@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Error {{ code }}{% endblock %}
+{% block body %}
+<main id="main" class="error-page">
+  <div>
+    <div class="code">{{ code }}</div>
+    <h1 style="margin-bottom:8px">{{ message }}</h1>
+    <p class="muted" style="margin-bottom:20px">Si creés que es un error, volvé al inicio e intentá de nuevo.</p>
+    <a class="btn btn-primary" href="{{ url_for('home') if g.user else url_for('login') }}">Volver al inicio</a>
+  </div>
+</main>
+{% endblock %}

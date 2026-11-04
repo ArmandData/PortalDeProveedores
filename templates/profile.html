@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Mi perfil{% endblock %}
+{% block main %}
+<div class="page">
+  <div class="page-head">
+    <div><h1>Mi perfil</h1><p>Datos de tu empresa registrados en {{ company }}.</p></div>
+  </div>
+  <div class="profile-grid">
+    <div class="stack">
+      <section class="card profile-card">
+        {{ avatar(p, 'avatar-xl') }}
+        <h2>{{ p.nombre_fantasia or p.razon_social }}</h2>
+        <p class="sub">{{ p.razon_social }}</p>
+        <p class="sub mono">CUIT {{ p.cuit }}</p>
+        <div style="margin-top:10px"><span class="badge badge-{{ 'resuelto' if p.estado == 'Activo' else 'cerrado' }}">Proveedor {{ p.estado | lower }}</span></div>
+        <form method="post" action="{{ url_for('profile_avatar') }}" enctype="multipart/form-data" class="avatar-actions">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <label class="btn btn-secondary btn-sm" for="avatar-input">{{ icon('upload', 'icon-sm') }}{{ 'Cambiar foto' if p.avatar else 'Subir foto' }}</label>
+          <input id="avatar-input" name="avatar" type="file" accept=".png,.jpg,.jpeg,.webp" class="sr-only" data-upload-on-change>
+          {% if p.avatar %}<button class="btn btn-danger-ghost btn-sm" name="remove" value="1" type="submit" data-confirm="¿Quitar la foto de perfil?">Quitar</button>{% endif %}
+        </form>
+        <p class="muted" style="font-size:12px;margin-top:8px">PNG, JPG o WEBP · máx. 2 MB</p>
+      </section>
+      <section class="card card-pad">
+        <h2 style="margin-bottom:12px">Actividad</h2>
+        <div class="stat-row">
+          <div class="stat"><strong>{{ stats.total or 0 }}</strong><span>Tickets</span></div>
+          <div class="stat"><strong>{{ stats.abiertos or 0 }}</strong><span>Abiertos</span></div>
+          <div class="stat"><strong>{{ stats.resueltos or 0 }}</strong><span>Resueltos</span></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="card">
+        <div class="card-head"><div><h2>Datos fiscales y comerciales</h2><p>Solo se modifican por solicitud, para proteger tu cuenta.</p></div>{{ icon('lock', 'muted') }}</div>
+        <div class="card-body">
+          <dl class="dl">
+            <dt>Razón social</dt><dd>{{ p.razon_social }}</dd>
+            <dt>CUIT</dt><dd class="mono">{{ p.cuit }}</dd>
+            <dt>Condición frente al IVA</dt><dd>{{ p.condicion_iva }}</dd>
+            <dt>Rubro</dt><dd>{{ p.rubro or '—' }}</dd>
+            <dt>Domicilio fiscal</dt><dd>{{ p.domicilio }}, {{ p.localidad }}, {{ p.provincia }} ({{ p.codigo_postal }})</dd>
+            <dt>E-mail de facturación</dt><dd>{{ p.email }}</dd>
+            <dt>Banco</dt><dd>{{ p.banco or '—' }}</dd>
+            <dt>CBU</dt><dd class="mono">{{ p.cbu | cbu_mask }}</dd>
+            <dt>Condición de pago</dt><dd>{{ p.condicion_pago or '—' }}</dd>
+            <dt>Proveedor desde</dt><dd>{{ p.created_at | fecha(False) }}</dd>
+          </dl>
+          <div class="lock-note">{{ icon('shield', 'icon-sm') }}<span>¿Necesitás actualizar datos fiscales o bancarios? <a href="{{ url_for('assistant') }}">Pedilo en el asistente</a> y adjuntá la constancia correspondiente. Nunca te vamos a pedir estos datos por e-mail.</span></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h2>Contacto</h2><p>Persona a la que contactamos por consultas y reclamos.</p></div></div>
+        <form class="card-body" method="post" novalidate>
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <div class="form-grid">
+            {% for key, (label, maxlen) in fields.items() %}
+            <div class="field">
+              <label for="f-{{ key }}">{{ label }}{% if key == 'contacto_nombre' %} <span aria-hidden="true" style="color:var(--danger)">*</span>{% endif %}</label>
+              <input class="input" id="f-{{ key }}" name="{{ key }}" value="{{ p[key] or '' }}" maxlength="{{ maxlen }}"
+                     {% if key.endswith('email') %}type="email" autocomplete="email"{% elif 'telefono' in key %}type="tel" autocomplete="tel"{% elif key == 'sitio_web' %}type="url" placeholder="https://"{% else %}type="text"{% endif %}
+                     {% if key == 'contacto_nombre' %}required autocomplete="name"{% endif %}
+                     {% if errors[key] %}aria-invalid="true" aria-describedby="e-{{ key }}"{% endif %}>
+              {% if errors[key] %}<span class="error-text" id="e-{{ key }}">{{ icon('alert', 'icon-sm') }}{{ errors[key] }}</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          <div class="form-actions"><button class="btn btn-primary" type="submit" data-loading-text="Guardando…">Guardar cambios</button></div>
+        </form>
+      </section>
+
+      <section class="card" id="seguridad">
+        <div class="card-head"><div><h2>Seguridad</h2><p>Usuario de acceso: <span class="mono">{{ g.user.username }}</span></p></div></div>
+        <form class="card-body" method="post" action="{{ url_for('change_password') }}" novalidate>
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <div class="form-grid">
+            <div class="field"><label for="pw-current">Contraseña actual</label>
+              <input class="input" id="pw-current" name="current" type="password" autocomplete="current-password" required></div>
+            <div></div>
+            <div class="field"><label for="pw-new">Nueva contraseña</label>
+              <input class="input" id="pw-new" name="new" type="password" autocomplete="new-password" minlength="10" required aria-describedby="pw-hint">
+              <span class="hint" id="pw-hint">Mínimo 10 caracteres, con letras y números.</span></div>
+            <div class="field"><label for="pw-confirm">Repetir nueva contraseña</label>
+              <input class="input" id="pw-confirm" name="confirm" type="password" autocomplete="new-password" required></div>
+          </div>
+          <div class="form-actions"><button class="btn btn-secondary" type="submit" data-loading-text="Actualizando…">Actualizar contraseña</button></div>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

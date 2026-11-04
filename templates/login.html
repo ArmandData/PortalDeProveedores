@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Ingresar{% endblock %}
+{% block body %}
+<div class="login-wrap">
+  <section class="login-hero" aria-label="Presentación">
+    <span class="brand"><span class="brand-mark" aria-hidden="true">P</span><span class="brand-name">Portal de Proveedores<small>{{ company }}</small></span></span>
+    <h1>Un solo lugar para todas tus consultas y reclamos.</h1>
+    <p>Escribinos como le escribirías a una persona. Nuestro asistente entiende tu pedido y lo deriva al equipo indicado.</p>
+    <ul class="features">
+      <li><span class="ficon">{{ icon('sparkles') }}</span><div><strong>Respuestas al instante</strong><span>El asistente resuelve dudas frecuentes las 24 h.</span></div></li>
+      <li><span class="ficon">{{ icon('route') }}</span><div><strong>Derivación automática</strong><span>Cada caso recibe un ID y llega al equipo correcto.</span></div></li>
+      <li><span class="ficon">{{ icon('clock') }}</span><div><strong>Seguimiento con plazos</strong><span>Mirá el estado de cada ticket y su plazo de respuesta.</span></div></li>
+    </ul>
+  </section>
+  <main class="login-panel" id="main">
+    <div class="login-box">
+      <h2>Ingresá a tu cuenta</h2>
+      <p>Usá tu CUIT (sin guiones) o tu e-mail.</p>
+      {% if error %}
+        <div class="alert alert-error" role="alert" id="login-error">{{ icon('alert') }}<span>{{ error }}</span></div>
+        <div style="height:16px"></div>
+      {% endif %}
+      <form method="post" novalidate>
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="field">
+          <label for="username">CUIT o e-mail</label>
+          <div class="input-group">
+            {{ icon('user') }}
+            <input class="input" id="username" name="username" value="{{ username }}" autocomplete="username" inputmode="email"
+                   required autofocus placeholder="30712345671" {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}>
+          </div>
+        </div>
+        <div class="field">
+          <label for="password">Contraseña</label>
+          <div class="input-group">
+            {{ icon('lock') }}
+            <input class="input" id="password" name="password" type="password" autocomplete="current-password" required
+                   {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}>
+            <button class="btn btn-ghost icon-btn btn-sm toggle-pass" type="button" data-toggle-password="password" aria-label="Mostrar contraseña" aria-pressed="false">{{ icon('eye', 'icon-sm') }}</button>
+          </div>
+        </div>
+        <div class="field" style="flex-direction:row; justify-content:space-between; align-items:center">
+          <label class="checkbox"><input type="checkbox" name="remember"> Mantener la sesión iniciada</label>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit" data-loading-text="Ingresando…">Ingresar</button>
+      </form>
+      <p class="login-help">¿Olvidaste tu contraseña o todavía no tenés usuario? Escribí a <a href="mailto:proveedores@empresa.com">proveedores@empresa.com</a>.</p>
+    </div>
+  </main>
+</div>
+{% endblock %}
