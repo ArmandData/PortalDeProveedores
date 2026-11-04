@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, priority, team_tag %}
+{% block title %}Tipos de caso y SLA{% endblock %}
+{% block main %}
+<div class="page" style="max-width:1320px">
+  <div class="page-head">
+    <div>
+      <h1>Tipos de caso y SLA</h1>
+      <p>Qué equipo resuelve cada tipo de consulta o reclamo y en qué plazos. El asistente usa esta tabla para clasificar y derivar cada ticket.</p>
+    </div>
+    {% if can_edit %}
+      <a class="btn btn-primary" href="{{ url_for('case_type_new') }}">{{ icon('plus', 'icon-sm') }}Nuevo tipo de caso</a>
+    {% endif %}
+  </div>
+
+  {% if can_edit %}
+    <div class="alert alert-info" style="margin-bottom:16px">{{ icon('lock') }}<span>Estos plazos son <strong>internos</strong>: el proveedor no ve el plazo de respuesta, el SLA ni tiempos promedio. Los cambios aplican a los tickets que se creen a partir de ahora.</span></div>
+  {% else %}
+    <div class="alert alert-info" style="margin-bottom:16px">{{ icon('eye') }}<span>Vista de solo lectura. Si hace falta cambiar un tipo de caso, un plazo o el equipo asignado, pedíselo al administrador del portal. Estos plazos no se muestran al proveedor.</span></div>
+  {% endif %}
+
+  <form class="toolbar filters" method="get">
+    <label class="filter">Equipo
+      <select class="select" name="equipo" data-autosubmit>
+        <option value="">Todos los equipos</option>
+        {% for tm in teams %}<option value="{{ tm.id }}" {% if team == tm.id %}selected{% endif %}>{{ tm.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <noscript><button class="btn btn-secondary" type="submit">Filtrar</button></noscript>
+  </form>
+
+  <section class="card">
+    <div class="table-wrap">
+      <table class="table table-compact case-types-table">
+        <caption class="sr-only">Tipos de caso, equipo resolutor y plazos</caption>
+        <thead><tr>
+          <th scope="col">Tipo de caso</th>
+          <th scope="col" class="hide-sm">Clase</th>
+          <th scope="col">Equipo que lo resuelve</th>
+          <th scope="col" class="hide-sm">Prioridad</th>
+          <th scope="col" class="num">1ra respuesta</th>
+          <th scope="col" class="num">SLA de resolución</th>
+          <th scope="col" class="num hide-md">Tickets</th>
+          {% if can_edit %}<th scope="col"><span class="sr-only">Acciones</span></th>{% endif %}
+        </tr></thead>
+        <tbody>
+          {% for c in types %}
+          <tr class="{% if not c.active %}is-dim{% endif %}" {% if can_edit %}data-href="{{ url_for('case_type_edit', type_id=c.id) }}"{% else %}style="cursor:default"{% endif %}>
+            <td>
+              {% if can_edit %}<a class="subject" href="{{ url_for('case_type_edit', type_id=c.id) }}">{{ c.name }}</a>{% else %}<span class="subject">{{ c.name }}</span>{% endif %}
+              <span class="sub">{% if not c.active %}<span class="badge badge-cerrado">Inactivo</span>{% endif %}{{ c.description }}</span>
+            </td>
+            <td class="hide-sm">{{ KIND_LABELS[c.kind] }}</td>
+            <td>{{ team_tag(c.team_name, c.team_color) }}</td>
+            <td class="hide-sm">{{ priority(c.priority) }}</td>
+            <td class="num nowrap" data-label="1ra respuesta">{{ c.response_hours | horas }}</td>
+            <td class="num nowrap" data-label="SLA de resolución"><strong>{{ c.resolution_hours | horas }}</strong></td>
+            <td class="num hide-md">{{ c.tickets }}</td>
+            {% if can_edit %}<td class="nowrap"><a class="btn btn-ghost btn-sm" href="{{ url_for('case_type_edit', type_id=c.id) }}">Editar</a></td>{% endif %}
+          </tr>
+          {% else %}
+          <tr style="cursor:default"><td colspan="{{ 8 if can_edit else 7 }}" class="muted">No hay tipos de caso para este equipo.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <p class="muted" style="font-size:13px;margin-top:12px">
+    <strong>1ra respuesta:</strong> tiempo máximo para el primer mensaje del equipo al proveedor.
+    <strong>SLA de resolución:</strong> tiempo máximo para resolver el caso; es el que se mide en la bandeja y en Analítica.
+  </p>
+</div>
+{% endblock %}

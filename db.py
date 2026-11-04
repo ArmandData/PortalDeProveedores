@@ -111,6 +111,24 @@ CREATE TABLE IF NOT EXISTS conversations (
     updated_at TEXT NOT NULL
 );
 
+-- Tipos de caso: definen equipo resolutor, prioridad sugerida y plazos internos (no visibles para el proveedor)
+CREATE TABLE IF NOT EXISTS case_types (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'reclamo' CHECK (kind IN ('consulta', 'reclamo')),
+    team_id INTEGER NOT NULL REFERENCES teams(id),
+    priority TEXT NOT NULL DEFAULT 'media' CHECK (priority IN ('baja', 'media', 'alta', 'urgente')),
+    response_hours INTEGER NOT NULL,
+    resolution_hours INTEGER NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    updated_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tickets (
     id INTEGER PRIMARY KEY,
     code TEXT UNIQUE NOT NULL,
@@ -130,7 +148,9 @@ CREATE TABLE IF NOT EXISTS tickets (
     sla_due TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    resolved_at TEXT
+    resolved_at TEXT,
+    case_type_id INTEGER REFERENCES case_types(id),
+    response_due TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -185,6 +205,45 @@ TEAMS = [
 ]
 
 
+# Tipos de caso iniciales: (equipo, nombre, descripción, tipo, prioridad, h 1ra respuesta, h resolución, palabras clave)
+CASE_TYPES = [
+    ("pagos", "Factura vencida sin pagar", "La factura ya venció según la condición de pago y no se registra el cobro.",
+     "reclamo", "alta", 8, 24, "no me pagaron, no pagaron, impag, adeud, deuda, pago vencido, vencid, no cobre"),
+    ("pagos", "Estado de pago o fecha de cobro", "Consulta por la fecha estimada de cobro, órdenes de pago o transferencias.",
+     "consulta", "media", 8, 24, "cuando cobro, cuando pagan, estado del pago, estado de mi pago, fecha de pago, orden de pago, transferencia"),
+    ("facturacion", "Factura rechazada", "Factura observada o rechazada por Cuentas a Pagar.",
+     "reclamo", "alta", 12, 48, "factura rechazada, rechazaron la factura, rechazo de factura, observada"),
+    ("facturacion", "Notas de crédito y débito", "Emisión, aplicación o consultas sobre notas de crédito y débito.",
+     "consulta", "media", 24, 48, "nota de credito, nota de debito"),
+    ("certificacion", "Certificado o HES rechazado o demorado", "Partes diarios, certificados de avance y hojas de entrada de servicio observadas o pendientes.",
+     "reclamo", "alta", 12, 48, "hes, hoja de entrada, certificado de avance, parte diario, partes diarios, acta de medicion, certificado de servicio"),
+    ("compras", "Orden de compra, cotización o licitación", "Consultas sobre OC emitidas, pedidos de cotización y procesos licitatorios.",
+     "consulta", "media", 24, 48, "orden de compra, cotiza, licitacion, presupuesto"),
+    ("compras", "Ajuste de tarifa, adenda o renovación", "Pedidos de ajuste por polinómica, adendas y renovaciones de contrato.",
+     "consulta", "media", 24, 72, "polinomica, ajuste de tarifa, tarifa, adenda, renovacion del contrato, renovar el contrato"),
+    ("logistica", "Entrega, turno de descarga o remito", "Coordinación de entregas en bases y almacenes, turnos y remitos.",
+     "consulta", "media", 8, 24, "entrega, turno, descarga, remito, almacen, flete, envio"),
+    ("logistica", "Faltante o demora en recepción", "Diferencias de cantidades, esperas o problemas al recibir materiales.",
+     "reclamo", "alta", 8, 24, "faltan, faltante, incomplet, esper, demora en la descarga"),
+    ("calidad", "No conformidad o material retenido", "Materiales observados, retenidos o devueltos por inspección.",
+     "reclamo", "alta", 24, 72, "no conformidad, retenido, retuvieron, defect, devolucion, rosca"),
+    ("calidad", "Certificado de calidad (mill certificate)", "Presentación o consultas sobre certificados de calidad de colada.",
+     "consulta", "media", 24, 72, "mill cert, certificado de calidad, colada, api 5ct, inspeccion"),
+    ("hse", "Incidente, accidente o evento ambiental", "Incidentes, casi accidentes, lesiones, derrames, fugas o incendios en locación.",
+     "reclamo", "urgente", 1, 4, "incidente, accidente, casi accidente, derrame, fuga, incendio, lesion, herido, ambiental"),
+    ("hse", "Permisos de trabajo e inducciones", "Requisitos de seguridad para operar: permisos de trabajo e inducciones HSE.",
+     "consulta", "media", 4, 24, "permiso de trabajo, induccion, seguridad"),
+    ("impuestos", "Retenciones y certificados fiscales", "Retenciones, percepciones, certificados de exclusión y regímenes provinciales.",
+     "consulta", "media", 24, 72, "retencion, percepcion, iibb, ingresos brutos, ganancias, exclusion, convenio multilateral"),
+    ("maestro", "Renovación de seguros y habilitaciones", "Pólizas, ART, habilitaciones de equipos y documentación para ingresar a yacimiento.",
+     "consulta", "media", 24, 72, "poliza, seguro, art, habilitacion, documentacion, vtv, rto, ingreso a yacimiento"),
+    ("maestro", "Cambio de datos bancarios o fiscales", "Actualización de CBU, domicilio fiscal o razón social con constancia.",
+     "consulta", "alta", 24, 72, "cbu, datos bancarios, domicilio fiscal, razon social, alta de proveedor"),
+    ("general", "Otra consulta", "Consultas que no encajan en otro tipo de caso.",
+     "consulta", "media", 24, 48, ""),
+]
+
+
 def now_iso():
     return datetime.now().replace(microsecond=0).isoformat(sep=" ")
 
@@ -223,10 +282,42 @@ def init_db(seed=True):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     if seed and conn.execute("SELECT COUNT(*) FROM teams").fetchone()[0] == 0:
         _seed(conn)
+    if seed and conn.execute("SELECT COUNT(*) FROM case_types").fetchone()[0] == 0:
+        _seed_case_types(conn)
     conn.commit()
     conn.close()
+
+
+def _migrate(conn):
+    """Agrega columnas nuevas a bases creadas con versiones anteriores."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tickets)")}
+    for col, ddl in (("case_type_id", "INTEGER REFERENCES case_types(id)"), ("response_due", "TEXT")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE tickets ADD COLUMN {col} {ddl}")
+
+
+def _seed_case_types(conn):
+    """Carga los tipos de caso iniciales y clasifica los tickets existentes que no tienen tipo."""
+    import ai  # import diferido: ai no depende de la base
+
+    ts = now_iso()
+    team_id = {r[0]: r[1] for r in conn.execute("SELECT slug, id FROM teams")}
+    for i, (team, name, desc, kind, prio, resp_h, res_h, kws) in enumerate(CASE_TYPES):
+        if team in team_id:
+            conn.execute(
+                """INSERT INTO case_types (name, description, kind, team_id, priority, response_hours, resolution_hours,
+                   keywords, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (name, desc, kind, team_id[team], prio, resp_h, res_h, kws, (i + 1) * 10, ts, ts))
+    conn.row_factory = sqlite3.Row
+    types = [dict(r) for r in conn.execute("SELECT * FROM case_types WHERE active=1 ORDER BY sort_order, id")]
+    for t in conn.execute("SELECT id, team_id, subject, summary, created_at FROM tickets WHERE case_type_id IS NULL").fetchall():
+        ct = ai.match_case_type(types, t["team_id"], f"{t['subject']} {t['summary']}")
+        if ct:
+            due = (datetime.fromisoformat(t["created_at"]) + timedelta(hours=ct["response_hours"])).isoformat(sep=" ")
+            conn.execute("UPDATE tickets SET case_type_id=?, response_due=? WHERE id=?", (ct["id"], due, t["id"]))
 
 
 def _seed(conn):

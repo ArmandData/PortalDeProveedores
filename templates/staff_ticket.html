@@ -74,6 +74,11 @@
     <aside class="stack">
       <section class="card">
         <div class="card-head"><h2>Gestión</h2></div>
+        <div class="card-body" style="padding-bottom:0"><dl class="dl">
+          <dt>Tipo de caso</dt><dd>{% if t.case_type_name %}<a href="{{ url_for('case_types') }}">{{ t.case_type_name }}</a>{% else %}<span class="muted">Sin tipo</span>{% endif %}</dd>
+          {% if t.response_due %}<dt>1ra respuesta</dt><dd>{% if t.first_response_at %}{{ icon('check-circle', 'icon-sm') }} {{ t.first_response_at | fecha }}{% if t.first_response_at > t.response_due %} <span class="t-danger">(fuera de plazo)</span>{% endif %}{% else %}Vence {{ t.response_due | fecha }}{% endif %}</dd>{% endif %}
+          <dt>SLA de resolución</dt><dd>{{ t.resolution_hours | horas if t.resolution_hours else t.sla_hours | horas }} · vence {{ t.sla_due | fecha }}</dd>
+        </dl></div>
         <form class="card-body" method="post" action="{{ url_for('staff_update', code=t.code) }}">
           <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <div class="field"><label for="u-status">Estado</label>

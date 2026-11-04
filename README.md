@@ -86,6 +86,13 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
   cada ticket, promedios y medianas, cumplimiento del SLA por equipo, filtros por
   período, equipo y proveedor, y exportación a CSV.
 
+**Tipos de caso y SLA** (`/equipo/tipos-de-caso`)
+- Tabla de tipos de consulta y reclamo con el equipo que resuelve cada uno, la prioridad
+  mínima, el plazo de primera respuesta y el SLA de resolución. El asistente la usa para
+  clasificar y derivar cada ticket nuevo.
+- El administrador crea, edita y desactiva tipos; los agentes la ven en solo lectura.
+- Los plazos son internos: el proveedor no ve plazos de respuesta, SLA ni tiempos promedio.
+
 **Interfaz**
 - Paleta corporativa (azul institucional `#005DA7`, grises neutros y tipografía tipo DIN)
   con modo claro y oscuro: botón en el menú (o arriba en el celular) que recuerda la

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ 'Nuevo tipo de caso' if is_new else c.name }}{% endblock %}
+
+{% macro err(key) -%}
+  {% if errors[key] %}<span class="error-text" id="e-{{ key }}">{{ icon('alert', 'icon-sm') }}{{ errors[key] }}</span>{% endif %}
+{%- endmacro %}
+{% macro invalid(key) -%}{% if errors[key] %}aria-invalid="true" aria-describedby="e-{{ key }}"{% endif %}{%- endmacro %}
+
+{% block main %}
+<div class="page" style="max-width:860px">
+  <div class="breadcrumb"><a href="{{ url_for('case_types') }}">Tipos de caso y SLA</a>{{ icon('chevron', 'icon-sm') }}<span>{{ 'Nuevo' if is_new else c.name }}</span></div>
+  <div class="page-head">
+    <div>
+      <h1>{{ 'Nuevo tipo de caso' if is_new else 'Editar tipo de caso' }}</h1>
+      <p>{% if is_new %}Definí qué equipo lo resuelve y en qué plazos.{% else %}Usado en {{ used }} ticket{{ 's' if used != 1 }}. Los cambios aplican solo a los tickets nuevos; los existentes conservan su plazo.{% endif %}</p>
+    </div>
+  </div>
+
+  {% if errors %}<div class="alert alert-error" style="margin-bottom:16px" role="alert">{{ icon('alert') }}<span>Revisá los campos marcados.</span></div>{% endif %}
+
+  <form class="card" method="post" novalidate>
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="card-head"><div><h2>Tipo de caso</h2><p>Así lo ven los equipos en la bandeja y en cada ticket.</p></div></div>
+    <div class="card-body">
+      <div class="field">
+        <label for="f-name">Nombre <span aria-hidden="true" style="color:var(--danger)">*</span></label>
+        <input class="input" id="f-name" name="name" value="{{ c.name }}" maxlength="80" required placeholder="Ej.: Factura vencida sin pagar" {{ invalid('name') }}>
+        {{ err('name') }}
+      </div>
+      <div class="field">
+        <label for="f-description">Descripción</label>
+        <textarea class="textarea" id="f-description" name="description" maxlength="300" style="min-height:72px" placeholder="Qué casos entran en este tipo">{{ c.description }}</textarea>
+        <span class="hint">El asistente la usa para decidir qué tipo corresponde a cada pedido.</span>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="f-kind">Clase</label>
+          <select class="select" id="f-kind" name="kind" {{ invalid('kind') }}>
+            {% for k, v in KIND_LABELS.items() %}<option value="{{ k }}" {% if c.kind == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+          </select>
+          {{ err('kind') }}
+        </div>
+        <div class="field">
+          <label for="f-priority">Prioridad mínima</label>
+          <select class="select" id="f-priority" name="priority" {{ invalid('priority') }}>
+            {% for k, v in PRIORITY_LABELS.items() %}<option value="{{ k }}" {% if c.priority == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+          </select>
+          <span class="hint">El asistente puede subirla si el caso lo amerita, nunca bajarla.</span>
+          {{ err('priority') }}
+        </div>
+      </div>
+    </div>
+
+    <div class="card-head" style="border-top:1px solid var(--border)"><div><h2>Equipo y plazos</h2><p>Internos: no se muestran al proveedor.</p></div>{{ icon('lock', 'muted') }}</div>
+    <div class="card-body">
+      <div class="field">
+        <label for="f-team">Equipo que lo resuelve <span aria-hidden="true" style="color:var(--danger)">*</span></label>
+        <select class="select" id="f-team" name="team_id" required {{ invalid('team_id') }}>
+          <option value="">Elegí un equipo…</option>
+          {% for tm in teams %}<option value="{{ tm.id }}" {% if c.team_id == tm.id %}selected{% endif %}>{{ tm.name }}</option>{% endfor %}
+        </select>
+        {{ err('team_id') }}
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="f-response">Plazo de primera respuesta (horas) <span aria-hidden="true" style="color:var(--danger)">*</span></label>
+          <input class="input" id="f-response" name="response_hours" type="number" inputmode="numeric" min="1" max="720" step="1" required value="{{ c.response_hours or '' }}" {{ invalid('response_hours') }}>
+          <span class="hint">Tiempo máximo para el primer mensaje del equipo.</span>
+          {{ err('response_hours') }}
+        </div>
+        <div class="field">
+          <label for="f-resolution">SLA de resolución (horas) <span aria-hidden="true" style="color:var(--danger)">*</span></label>
+          <input class="input" id="f-resolution" name="resolution_hours" type="number" inputmode="numeric" min="1" max="2160" step="1" required value="{{ c.resolution_hours or '' }}" {{ invalid('resolution_hours') }}>
+          <span class="hint">Tiempo máximo para resolver. Se mide en la bandeja y en Analítica.</span>
+          {{ err('resolution_hours') }}
+        </div>
+      </div>
+    </div>
+
+    <div class="card-head" style="border-top:1px solid var(--border)"><div><h2>Clasificación automática</h2></div></div>
+    <div class="card-body">
+      <div class="field">
+        <label for="f-keywords">Palabras clave</label>
+        <input class="input" id="f-keywords" name="keywords" value="{{ c.keywords }}" maxlength="500" placeholder="Ej.: no me pagaron, deuda, pago vencido">
+        <span class="hint">Separadas por coma. Ayudan a reconocer el tipo cuando el asistente funciona sin IA.</span>
+      </div>
+      <div class="field">
+        <label class="checkbox"><input type="checkbox" name="active" value="1" {% if c.active %}checked{% endif %} {{ invalid('active') }}>Activo: el asistente puede usar este tipo para tickets nuevos</label>
+        {{ err('active') }}
+      </div>
+      <div class="form-actions">
+        <a class="btn btn-ghost" href="{{ url_for('case_types') }}">Cancelar</a>
+        <button class="btn btn-primary" type="submit" data-loading-text="Guardando…">{{ 'Crear tipo de caso' if is_new else 'Guardar cambios' }}</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

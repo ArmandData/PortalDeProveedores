@@ -728,3 +728,12 @@ h1 { font-weight: 700; }
 .table-compact .team-tag { white-space: normal; }
 .table-compact .subject { max-width: 300px; }
 @media (max-width: 1360px) { .table-compact .hide-md { display: none; } }
+
+/* Tipos de caso y SLA */
+.table tr.is-dim td { opacity: .6; }
+.case-types-table .subject { max-width: 360px; white-space: normal; }
+.case-types-table .sub { max-width: 420px; }
+@media (max-width: 860px) {
+  .case-types-table td[data-label] { text-align: left; display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+  .case-types-table td[data-label]::before { content: attr(data-label); color: var(--text-3); }
+}

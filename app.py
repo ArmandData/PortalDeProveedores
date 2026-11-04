@@ -60,6 +60,8 @@ STATUS_LABELS = {
 }
 STATUS_LABELS_STAFF = dict(STATUS_LABELS, esperando_proveedor="Esperando proveedor")
 PRIORITY_LABELS = {"baja": "Baja", "media": "Media", "alta": "Alta", "urgente": "Urgente"}
+PRIORITY_ORDER = list(PRIORITY_LABELS)
+KIND_LABELS = {"reclamo": "Reclamo", "consulta": "Consulta"}
 CONTRACT_STATUS_LABELS = {"vigente": "Vigente", "por_vencer": "Por vencer", "vencido": "Vencido", "rescindido": "Rescindido"}
 CONTRACT_TYPE_LABELS = {"suministro": "Suministro", "servicios": "Servicios", "obra": "Obra", "marco": "Acuerdo marco"}
 CONTRACT_ORDER = {"vigente": 0, "por_vencer": 1, "vencido": 2, "rescindido": 3}
@@ -110,6 +112,16 @@ def fmt_relativa(value):
         d = int(secs // 86400)
         return f"hace {d} día{'s' if d > 1 else ''}"
     return dt.strftime("%d/%m/%Y")
+
+
+@app.template_filter("horas")
+def fmt_horas(h):
+    """Plazo en horas, legible: 4 h, 24 h, 3 días."""
+    if h is None:
+        return "—"
+    if h >= 48 and h % 24 == 0:
+        return f"{h // 24} días"
+    return f"{h} h"
 
 
 @app.template_filter("tamano")
@@ -201,7 +213,7 @@ def provider_documents(provider_id):
 
 
 app.jinja_env.globals.update(STATUS_LABELS=STATUS_LABELS, STATUS_LABELS_STAFF=STATUS_LABELS_STAFF,
-                             PRIORITY_LABELS=PRIORITY_LABELS, sla_state=sla_state, ai_enabled=ai.ai_enabled,
+                             PRIORITY_LABELS=PRIORITY_LABELS, KIND_LABELS=KIND_LABELS, sla_state=sla_state, ai_enabled=ai.ai_enabled,
                              company=ai.COMPANY, CONTRACT_STATUS_LABELS=CONTRACT_STATUS_LABELS,
                              DOC_STATUS_LABELS=DOC_STATUS_LABELS)
 
@@ -554,9 +566,10 @@ def api_send(conv_id):
     save_attachments(msg_id, files)
 
     teams = [dict(t) for t in db.query("SELECT * FROM teams ORDER BY id")]
+    case_types = active_case_types()
     documents, _ = provider_documents(provider["id"])
     result = ai.analyze(provider, teams, history, text, files, ticket=dict(ticket) if ticket else None,
-                        contract=contract, documents=documents)
+                        contract=contract, documents=documents, case_types=case_types)
     location = (result.get("location") or "").strip() or (contract["yacimiento"] if contract and contract.get("yacimiento") else "")
     reply = result["reply"].strip()
 
@@ -568,17 +581,30 @@ def api_send(conv_id):
         db.execute(f"UPDATE tickets SET {', '.join(k + '=?' for k in updates)} WHERE id=?", (*updates.values(), ticket["id"]))
     elif result.get("create_ticket"):
         team = next(t for t in teams if t["slug"] == result["team"])
-        code = next_ticket_code()
+        # El tipo de caso define equipo, tipo, prioridad mínima y plazos (internos).
+        ctype = next((c for c in case_types if c["id"] == result.get("case_type")), None) \
+            or ai.match_case_type(case_types, team["id"], f"{text} {result.get('summary', '')}")
         kind = result["kind"] if result["kind"] in ("consulta", "reclamo") else "consulta"
-        sla_due = (datetime.now() + timedelta(hours=team["sla_hours"])).replace(microsecond=0).isoformat(sep=" ")
+        priority = result["priority"]
+        now = datetime.now().replace(microsecond=0)
+        if ctype:
+            team = next((t for t in teams if t["id"] == ctype["team_id"]), team)
+            kind = ctype["kind"]
+            priority = max(priority, ctype["priority"], key=PRIORITY_ORDER.index)
+            sla_due, response_due = now + timedelta(hours=ctype["resolution_hours"]), now + timedelta(hours=ctype["response_hours"])
+        else:
+            sla_due, response_due = now + timedelta(hours=team["sla_hours"]), None
+        code = next_ticket_code()
         tid = db.execute(
             """INSERT INTO tickets (code, provider_id, conversation_id, contract_id, team_id, kind, priority, status, subject,
-               summary, reference, location, ai_confidence, sla_due, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (code, provider["id"], conv_id, contract["id"] if contract else None, team["id"], kind, result["priority"], "nuevo",
+               summary, reference, location, ai_confidence, sla_due, created_at, updated_at, case_type_id, response_due)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (code, provider["id"], conv_id, contract["id"] if contract else None, team["id"], kind, priority, "nuevo",
              result["subject"], result["summary"], result.get("reference") or "", location[:150], result.get("confidence"),
-             sla_due, ts, ts))
-        log_event(tid, "created", f"Clasificado por IA ({result['engine']}) → {team['name']}, prioridad {result['priority']}, "
+             sla_due.isoformat(sep=" "), ts, ts, ctype["id"] if ctype else None,
+             response_due.isoformat(sep=" ") if response_due else None))
+        log_event(tid, "created", f"Clasificado por IA ({result['engine']}) → {team['name']}"
+                                  + (f", tipo «{ctype['name']}»" if ctype else "") + f", prioridad {priority}, "
                                   f"confianza {int((result.get('confidence') or 0) * 100)}%")
         db.execute("UPDATE conversations SET title=? WHERE id=?", (result["subject"][:90], conv_id))
         reply += (f"\n\n**{'Reclamo registrado' if kind == 'reclamo' else 'Consulta registrada'}: {code}**\n"
@@ -982,9 +1008,10 @@ def staff_inbox():
     q = request.args.get("q", "").strip()
     contract = request.args.get("contrato", "").strip()
     sql = """SELECT t.*, tm.name AS team_name, tm.color AS team_color, p.razon_social, p.cuit, u.full_name AS assignee_name,
-             ct.numero AS contract_numero
+             ct.numero AS contract_numero, cty.name AS case_type_name
              FROM tickets t JOIN teams tm ON tm.id=t.team_id JOIN providers p ON p.id=t.provider_id
-             LEFT JOIN users u ON u.id=t.assignee_id LEFT JOIN contracts ct ON ct.id=t.contract_id WHERE 1=1"""
+             LEFT JOIN users u ON u.id=t.assignee_id LEFT JOIN contracts ct ON ct.id=t.contract_id
+             LEFT JOIN case_types cty ON cty.id=t.case_type_id WHERE 1=1"""
     args = []
     if contract == "sin":
         sql += " AND t.contract_id IS NULL"
@@ -1019,8 +1046,12 @@ def staff_inbox():
 
 
 def staff_ticket(code):
-    t = db.query("""SELECT t.*, tm.name AS team_name, tm.color AS team_color, tm.sla_hours, u.full_name AS assignee_name
+    t = db.query("""SELECT t.*, tm.name AS team_name, tm.color AS team_color, tm.sla_hours, u.full_name AS assignee_name,
+                    ct.name AS case_type_name, ct.response_hours, ct.resolution_hours,
+                    (SELECT MIN(m.created_at) FROM messages m WHERE m.conversation_id=t.conversation_id
+                     AND m.role='agent' AND m.internal=0) AS first_response_at
                     FROM tickets t JOIN teams tm ON tm.id=t.team_id LEFT JOIN users u ON u.id=t.assignee_id
+                    LEFT JOIN case_types ct ON ct.id=t.case_type_id
                     WHERE t.code=?""", (code,), one=True)
     if not t:
         abort(404)
@@ -1114,6 +1145,111 @@ def staff_update(code):
             log_event(t["id"], ev, detail)
         flash("Ticket actualizado.", "success")
     return redirect(url_for("staff_ticket_detail", code=code))
+
+
+# ---------------------------------------------------------------------------
+# Tipos de caso y SLA: el administrador los define, los equipos solo los consultan.
+# El proveedor nunca ve estos plazos.
+# ---------------------------------------------------------------------------
+CASE_TYPE_LIMITS = dict(name=80, description=300, keywords=500)
+MAX_RESPONSE_HOURS = 24 * 30
+MAX_RESOLUTION_HOURS = 24 * 90
+
+
+def active_case_types():
+    return [dict(c) for c in db.query("SELECT * FROM case_types WHERE active=1 ORDER BY sort_order, id")]
+
+
+def case_type_form(values=None):
+    """Valida el formulario de tipo de caso. Devuelve (datos, errores)."""
+    f = request.form
+    data = {k: (f.get(k) or "").strip()[:n] for k, n in CASE_TYPE_LIMITS.items()}
+    data["keywords"] = ", ".join(k.strip() for k in data["keywords"].split(",") if k.strip())
+    data["kind"] = f.get("kind") if f.get("kind") in KIND_LABELS else ""
+    data["priority"] = f.get("priority") if f.get("priority") in PRIORITY_LABELS else ""
+    data["team_id"] = f.get("team_id", type=int)
+    data["response_hours"] = f.get("response_hours", type=int)
+    data["resolution_hours"] = f.get("resolution_hours", type=int)
+    data["active"] = 1 if f.get("active") == "1" else 0
+    errors = {}
+    if not data["name"]:
+        errors["name"] = "Ingresá un nombre."
+    if not data["kind"]:
+        errors["kind"] = "Elegí si es reclamo o consulta."
+    if not data["priority"]:
+        errors["priority"] = "Elegí una prioridad."
+    if not data["team_id"] or not db.query("SELECT 1 FROM teams WHERE id=?", (data["team_id"],), one=True):
+        errors["team_id"] = "Elegí el equipo que resuelve este tipo de caso."
+    if not data["response_hours"] or not 1 <= data["response_hours"] <= MAX_RESPONSE_HOURS:
+        errors["response_hours"] = f"Ingresá un número de horas entre 1 y {MAX_RESPONSE_HOURS}."
+    if not data["resolution_hours"] or not 1 <= data["resolution_hours"] <= MAX_RESOLUTION_HOURS:
+        errors["resolution_hours"] = f"Ingresá un número de horas entre 1 y {MAX_RESOLUTION_HOURS}."
+    elif data["response_hours"] and data["response_hours"] > data["resolution_hours"]:
+        errors["resolution_hours"] = "El SLA de resolución no puede ser menor que el plazo de primera respuesta."
+    if values is not None and not data["active"] and values["active"]:
+        remaining = db.query("SELECT COUNT(*) AS n FROM case_types WHERE active=1 AND id<>?", (values["id"],), one=True)["n"]
+        if remaining == 0:
+            errors["active"] = "Tiene que quedar al menos un tipo de caso activo."
+    return data, errors
+
+
+@app.route("/equipo/tipos-de-caso")
+@login_required("agent", "admin")
+def case_types():
+    rows = db.query("""SELECT c.*, tm.name AS team_name, tm.color AS team_color, u.full_name AS updated_by_name,
+                       (SELECT COUNT(*) FROM tickets t WHERE t.case_type_id=c.id) AS tickets
+                       FROM case_types c JOIN teams tm ON tm.id=c.team_id LEFT JOIN users u ON u.id=c.updated_by
+                       ORDER BY c.active DESC, tm.id, c.sort_order, c.id""")
+    team = request.args.get("equipo", type=int)
+    if team:
+        rows = [r for r in rows if r["team_id"] == team]
+    teams = db.query("SELECT * FROM teams ORDER BY id")
+    return render_template("case_types.html", types=rows, teams=teams, team=team,
+                           can_edit=g.user["role"] == "admin")
+
+
+@app.route("/equipo/tipos-de-caso/nuevo", methods=["GET", "POST"])
+@login_required("admin")
+def case_type_new():
+    values, errors = dict(kind="reclamo", priority="media", active=1, team_id=None, response_hours=24, resolution_hours=48,
+                          name="", description="", keywords=""), {}
+    if request.method == "POST":
+        values, errors = case_type_form()
+        if not errors:
+            ts = db.now_iso()
+            order = db.query("SELECT COALESCE(MAX(sort_order), 0) + 10 AS n FROM case_types", one=True)["n"]
+            db.execute("""INSERT INTO case_types (name, description, kind, team_id, priority, response_hours, resolution_hours,
+                          keywords, active, sort_order, updated_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       (values["name"], values["description"], values["kind"], values["team_id"], values["priority"],
+                        values["response_hours"], values["resolution_hours"], values["keywords"], values["active"], order,
+                        g.user["id"], ts, ts))
+            flash(f"Tipo de caso «{values['name']}» creado.", "success")
+            return redirect(url_for("case_types"))
+    return render_template("case_type_form.html", c=values, errors=errors, is_new=True,
+                           teams=db.query("SELECT * FROM teams ORDER BY id"))
+
+
+@app.route("/equipo/tipos-de-caso/<int:type_id>", methods=["GET", "POST"])
+@login_required("admin")
+def case_type_edit(type_id):
+    current = db.query("SELECT * FROM case_types WHERE id=?", (type_id,), one=True)
+    if not current:
+        abort(404)
+    values, errors = dict(current), {}
+    if request.method == "POST":
+        values, errors = case_type_form(current)
+        values["id"] = type_id
+        if not errors:
+            db.execute("""UPDATE case_types SET name=?, description=?, kind=?, team_id=?, priority=?, response_hours=?,
+                          resolution_hours=?, keywords=?, active=?, updated_by=?, updated_at=? WHERE id=?""",
+                       (values["name"], values["description"], values["kind"], values["team_id"], values["priority"],
+                        values["response_hours"], values["resolution_hours"], values["keywords"], values["active"],
+                        g.user["id"], db.now_iso(), type_id))
+            flash(f"Tipo de caso «{values['name']}» actualizado. Los cambios aplican a los tickets nuevos.", "success")
+            return redirect(url_for("case_types"))
+    used = db.query("SELECT COUNT(*) AS n FROM tickets WHERE case_type_id=?", (type_id,), one=True)["n"]
+    return render_template("case_type_form.html", c=values, errors=errors, is_new=False, used=used,
+                           teams=db.query("SELECT * FROM teams ORDER BY id"))
 
 
 # ---------------------------------------------------------------------------
