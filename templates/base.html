@@ -7,7 +7,7 @@
   <title>{% block title %}Portal de Proveedores{% endblock %} · {{ company }}</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23005da7'/%3E%3Ctext x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
   <script src="{{ url_for('static', filename='js/theme-init.js') }}?v=3"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=5">
   <script src="{{ url_for('static', filename='js/app.js') }}?v=3" defer></script>
   {% block head %}{% endblock %}
 </head>
@@ -26,7 +26,8 @@
       {% if g.user.role == 'provider' %}
         <a href="{{ url_for('assistant') }}" {% if ep == 'assistant' %}aria-current="page"{% endif %}>{{ icon('chat') }}Asistente</a>
         <a href="{{ url_for('tickets') }}" {% if ep == 'tickets' %}aria-current="page"{% endif %}>{{ icon('ticket') }}Mis tickets
-          {% if nav_unread %}<span class="count" aria-label="{{ nav_unread }} respuestas nuevas">{{ nav_unread }}</span>{% endif %}</a>
+          {% if nav_unread %}<span class="unread-dot nav-dot" title="Respuestas nuevas" aria-label="{{ nav_unread }} respuesta{{ 's' if nav_unread > 1 }} nueva{{ 's' if nav_unread > 1 }}"></span>{% endif %}
+          {% if nav_open %}<span class="count" title="Tickets abiertos" aria-label="{{ nav_open }} abierto{{ 's' if nav_open > 1 }}">{{ nav_open }}</span>{% endif %}</a>
         <a href="{{ url_for('contracts') }}" {% if ep in ('contracts', 'contract_detail') %}aria-current="page"{% endif %}>{{ icon('contract') }}Mis contratos</a>
         <a href="{{ url_for('documents') }}" {% if ep == 'documents' %}aria-current="page"{% endif %}>{{ icon('shield') }}Mi documentación
           {% if nav_docs_alert %}<span class="count count-warn" aria-label="{{ nav_docs_alert }} documentos vencidos o por vencer">{{ nav_docs_alert }}</span>{% endif %}</a>

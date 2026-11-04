@@ -11,10 +11,28 @@
     <a class="btn btn-primary" href="{{ url_for('assistant') }}">{{ icon('plus', 'icon-sm') }}Nueva consulta</a>
   </div>
 
-  {% if counts.esperando %}
-  <div class="alert alert-warning" role="status" style="margin-bottom:16px">{{ icon('alert') }}
-    <span>Tenés <strong>{{ counts.esperando }}</strong> ticket{{ 's' if counts.esperando > 1 }} esperando tu respuesta.</span></div>
-  {% endif %}
+  <section class="ticket-summary" aria-label="Resumen de tus solicitudes">
+    <a class="tsum tsum-open" href="{{ url_for('tickets', estado='abiertos') }}" {% if status == 'abiertos' %}aria-current="true"{% endif %}>
+      <span class="tsum-label">{{ icon('ticket', 'icon-sm') }}Abiertos</span>
+      <strong class="tsum-value">{{ counts.abiertos or 0 }}</strong>
+      <span class="tsum-sub">{% if counts.abiertos %}solicitud{{ 'es' if counts.abiertos != 1 }} en curso{% else %}No tenés solicitudes abiertas{% endif %}</span>
+    </a>
+    <div class="tsum">
+      <span class="tsum-label">{{ icon('users', 'icon-sm') }}En revisión del equipo</span>
+      <strong class="tsum-value">{{ counts.revision or 0 }}</strong>
+      <span class="tsum-sub">Recibidos o en gestión</span>
+    </div>
+    <div class="tsum {% if counts.esperando %}tsum-warn{% endif %}">
+      <span class="tsum-label">{{ icon('alert' if counts.esperando else 'chat', 'icon-sm') }}Esperando tu respuesta</span>
+      <strong class="tsum-value">{{ counts.esperando or 0 }}</strong>
+      <span class="tsum-sub">{% if counts.esperando %}El equipo necesita un dato tuyo{% else %}Nada pendiente de tu parte{% endif %}</span>
+    </div>
+    <a class="tsum" href="{{ url_for('tickets', estado='cerrados') }}" {% if status == 'cerrados' %}aria-current="true"{% endif %}>
+      <span class="tsum-label">{{ icon('check-circle', 'icon-sm') }}Resueltos</span>
+      <strong class="tsum-value">{{ counts.cerrados or 0 }}</strong>
+      <span class="tsum-sub">de {{ counts.todos or 0 }} en total</span>
+    </a>
+  </section>
 
   <form class="toolbar" method="get" role="search">
     <nav class="tabs" aria-label="Filtrar por estado">
@@ -43,7 +61,7 @@
               <a class="subject" href="{{ url_for('ticket_detail', code=t.code) }}">{% if t.unread %}<span class="unread-dot" title="Respuesta nueva"></span> {% endif %}{{ t.subject }}</a>
               <span class="sub"><span class="mono">{{ t.code }}</span>·<span>{{ 'Reclamo' if t.kind == 'reclamo' else 'Consulta' }}</span>
                 {% if t.contract_numero %}<span class="chip-contract">{{ t.contract_numero }}</span>{% endif %}
-                {% if t.reference %}<span>· {{ t.reference }}</span>{% endif %}
+                {% if t.reference %}<span title="{{ t.reference }}">· {{ t.reference | truncate(60, True, "…") }}</span>{% endif %}
                 {% if t.location %}<span>· {{ t.location }}</span>{% endif %}</span>
             </td>
             <td>{{ status_badge(t.status) }}</td>

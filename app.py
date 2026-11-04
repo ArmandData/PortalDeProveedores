@@ -1,5 +1,6 @@
 """Portal de Proveedores — consultas y reclamos con asistente IA y ticketera."""
 import functools
+import hashlib
 import logging
 import os
 import re
@@ -287,6 +288,9 @@ def inject_nav():
                WHERE c.provider_id=? AND m.role='agent' AND m.internal=0
                AND m.created_at > COALESCE(c.provider_seen_at, '')""",
             (g.user["provider_id"],), one=True)["n"]
+        ctx["nav_open"] = db.query(
+            f"SELECT COUNT(*) AS n FROM tickets WHERE provider_id=? AND status IN ({','.join('?' * len(OPEN_STATUSES))})",
+            (g.user["provider_id"], *OPEN_STATUSES), one=True)["n"]
         _, docs_summary = provider_documents(g.user["provider_id"])
         ctx["nav_docs_alert"] = docs_summary["vencido"] + docs_summary["por_vencer"]
         ctx["nav_docs_summary"] = docs_summary
@@ -497,15 +501,71 @@ def log_event(ticket_id, event, detail=None):
                (ticket_id, g.user["id"] if g.get("user") else None, event, detail, db.now_iso()))
 
 
+def file_fingerprints(data, extracted_text):
+    """Huella del archivo (bytes exactos) y de su contenido (texto normalizado).
+    La segunda detecta el mismo documento guardado o exportado de nuevo con otro nombre."""
+    sha = hashlib.sha256(data).hexdigest()
+    norm = re.sub(r"\s+", " ", (extracted_text or "")).strip().lower()
+    content = hashlib.sha256(norm.encode()).hexdigest() if len(norm) >= 200 else None
+    return sha, content
+
+
 def save_attachments(message_id, files):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     for f in files:
         stored = f"{uuid.uuid4().hex}.{extract.extension(f['original_name'])}"
         with open(os.path.join(UPLOAD_DIR, stored), "wb") as fh:
             fh.write(f["data"])
-        db.execute("""INSERT INTO attachments (message_id, original_name, stored_name, mime, size, extracted_text, created_at)
-                      VALUES (?,?,?,?,?,?,?)""",
-                   (message_id, f["original_name"], stored, f["mime"], f["size"], f["extracted_text"], db.now_iso()))
+        sha, content = file_fingerprints(f["data"], f["extracted_text"])
+        db.execute("""INSERT INTO attachments (message_id, original_name, stored_name, mime, size, extracted_text, created_at,
+                      sha256, content_hash) VALUES (?,?,?,?,?,?,?,?,?)""",
+                   (message_id, f["original_name"], stored, f["mime"], f["size"], f["extracted_text"], db.now_iso(), sha, content))
+
+
+def find_duplicate_attachments(provider_id, files, exclude_conv_id):
+    """Adjuntos nuevos que ya están en otro ticket ABIERTO del mismo proveedor.
+    Devuelve una lista de dict(name, code, status, subject), uno por archivo y ticket."""
+    if not files:
+        return []
+    found, seen = [], set()
+    for f in files:
+        sha, content = file_fingerprints(f["data"], f["extracted_text"])
+        rows = db.query(
+            f"""SELECT DISTINCT t.code, t.status, t.subject, a.original_name AS prev_name FROM attachments a
+                JOIN messages m ON m.id=a.message_id JOIN conversations c ON c.id=m.conversation_id
+                JOIN tickets t ON t.conversation_id=c.id
+                WHERE c.provider_id=? AND c.id<>? AND t.status IN ({','.join('?' * len(OPEN_STATUSES))})
+                AND (a.sha256=? OR (? IS NOT NULL AND a.content_hash=?))
+                ORDER BY t.created_at DESC""",
+            (provider_id, exclude_conv_id or 0, *OPEN_STATUSES, sha, content, content))
+        for r in rows:
+            if (f["original_name"], r["code"]) not in seen:
+                seen.add((f["original_name"], r["code"]))
+                found.append(dict(name=f["original_name"], prev_name=r["prev_name"], code=r["code"],
+                                  status=STATUS_LABELS[r["status"]], subject=r["subject"]))
+    return found
+
+
+def duplicate_notice(dups):
+    lines = [f"- «{d['name']}» ya está en el ticket **{d['code']}** ({d['subject']}), estado: {d['status']}." for d in dups]
+    return "\n".join(lines)
+
+
+# El proveedor confirma que, aunque el documento se repita, es un pedido distinto.
+_DUP_CONFIRM = re.compile(r"\b(distint|diferente|otro (pedido|reclamo|caso|tema|ticket)|otra (consulta|solicitud|factura)|nuevo ticket|"
+                          r"abr[ií] (uno|otro|un nuevo)|s[ií],? (abr|cre|registr)|igual (abr|cre|registr)|no es el mismo)", re.I)
+
+
+def backfill_attachment_hashes():
+    """Calcula las huellas de adjuntos guardados antes de esta versión (se ejecuta una vez al iniciar)."""
+    with app.app_context():
+        rows = db.query("SELECT id, stored_name, extracted_text FROM attachments WHERE sha256 IS NULL")
+        for r in rows:
+            path = os.path.join(UPLOAD_DIR, r["stored_name"])
+            if os.path.exists(path):
+                with open(path, "rb") as fh:
+                    sha, content = file_fingerprints(fh.read(), r["extracted_text"])
+                db.execute("UPDATE attachments SET sha256=?, content_hash=? WHERE id=?", (sha, content, r["id"]))
 
 
 def read_uploads():
@@ -561,9 +621,27 @@ def api_send(conv_id):
             for a in m["attachments"]]
     last_id = history[-1]["id"] if history else 0
 
+    dups = find_duplicate_attachments(provider["id"], files, conv_id)
     msg_id = db.execute("INSERT INTO messages (conversation_id, role, author_id, body, created_at) VALUES (?,?,?,?,?)",
                         (conv_id, "provider", g.user["id"], text, ts))
     save_attachments(msg_id, files)
+
+    if dups and not ticket and not conv["dup_warned"]:
+        # Antes de abrir otro ticket, avisar que el documento ya está en una solicitud abierta.
+        codes = sorted({d["code"] for d in dups})
+        reply = ("Antes de registrar un nuevo pedido, te aviso que ya recibimos este documento en una solicitud que sigue abierta:\n"
+                 + duplicate_notice(dups)
+                 + f"\n\nPara no duplicar la solicitud, seguí el caso desde **{codes[0]}** (lo encontrás en **Mis tickets**): "
+                   "ahí podés sumar información o preguntar por el estado. "
+                   "Si se trata de un pedido distinto, contame qué necesitás y lo registro como uno nuevo.")
+        db.execute("UPDATE conversations SET dup_warned=? WHERE id=?", (",".join(codes), conv_id))
+        db.execute("INSERT INTO messages (conversation_id, role, body, created_at) VALUES (?,?,?,?)",
+                   (conv_id, "assistant", reply, db.now_iso()))
+        db.execute("UPDATE conversations SET updated_at=?, provider_seen_at=? WHERE id=?", (db.now_iso(), db.now_iso(), conv_id))
+        return jsonify(conversation_id=conv_id, title=db.query("SELECT title FROM conversations WHERE id=?", (conv_id,), one=True)["title"],
+                       messages=serialize_messages(conv_id, after_id=last_id), ticket=None,
+                       contract=serialize_contract(contract), no_contract=bool(conv["no_contract"]),
+                       duplicates=[d["code"] for d in dups])
 
     teams = [dict(t) for t in db.query("SELECT * FROM teams ORDER BY id")]
     case_types = active_case_types()
@@ -572,6 +650,14 @@ def api_send(conv_id):
                         contract=contract, documents=documents, case_types=case_types)
     location = (result.get("location") or "").strip() or (contract["yacimiento"] if contract and contract.get("yacimiento") else "")
     reply = result["reply"].strip()
+    warned = (conv["dup_warned"] or "").split(",") if conv["dup_warned"] else []
+    if warned and not ticket and result.get("create_ticket") and result.get("engine") == "local" and not _DUP_CONFIRM.search(text or ""):
+        # Sin IA no podemos interpretar la respuesta: solo abrimos un ticket nuevo si el proveedor lo confirma.
+        result["create_ticket"] = False
+        reply = (f"Perfecto. Seguimos el caso en **{warned[0]}**: podés abrirlo desde **Mis tickets** para sumar información. "
+                 "Si en cambio es un pedido distinto, escribime «es otro pedido» y contame qué necesitás.")
+    if ticket and dups:
+        reply += "\n\nTe aviso que este documento también está en otra solicitud abierta:\n" + duplicate_notice(dups)
 
     if ticket:
         updates = {"updated_at": ts}
@@ -603,6 +689,12 @@ def api_send(conv_id):
              result["subject"], result["summary"], result.get("reference") or "", location[:150], result.get("confidence"),
              sla_due.isoformat(sep=" "), ts, ts, ctype["id"] if ctype else None,
              response_due.isoformat(sep=" ") if response_due else None))
+        prev_dups = sorted({d["code"] for d in dups} | set(warned))
+        if prev_dups:
+            # Aviso para el equipo: el proveedor confirmó que es un pedido distinto pese al documento repetido.
+            note = f"Posible duplicado: el documento adjunto ya está en {', '.join(prev_dups)} (abierto). El proveedor indicó que es un pedido distinto."
+            db.execute("UPDATE tickets SET summary=summary || ? WHERE id=?", ("\n\n" + note, tid))
+            log_event(tid, "duplicate", note)
         log_event(tid, "created", f"Clasificado por IA ({result['engine']}) → {team['name']}"
                                   + (f", tipo «{ctype['name']}»" if ctype else "") + f", prioridad {priority}, "
                                   f"confianza {int((result.get('confidence') or 0) * 100)}%")
@@ -693,7 +785,7 @@ def tickets():
         args += [f"%{q}%"] * 4
     rows = db.query(sql + " ORDER BY t.updated_at DESC", args)
     counts = db.query("""SELECT SUM(status IN ('nuevo','en_curso','esperando_proveedor')) AS abiertos,
-                         SUM(status='esperando_proveedor') AS esperando, SUM(status IN ('resuelto','cerrado')) AS cerrados,
+                         SUM(status IN ('nuevo','en_curso')) AS revision, SUM(status='esperando_proveedor') AS esperando, SUM(status IN ('resuelto','cerrado')) AS cerrados,
                          COUNT(*) AS todos FROM tickets WHERE provider_id=?""", (g.user["provider_id"],), one=True)
     return render_template("tickets.html", tickets=rows, status=status, q=q, counts=counts)
 
@@ -1289,6 +1381,7 @@ def simple_markdown(text):
 
 
 db.init_db()
+backfill_attachment_hashes()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5050"))

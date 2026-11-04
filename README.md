@@ -73,6 +73,13 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
   (enmascarados), condición de pago, contacto editable, foto de perfil y cambio de
   contraseña. Los datos fiscales y bancarios solo cambian mediante ticket (antifraude).
 
+- **Documentos duplicados:** si el proveedor adjunta un documento que ya está en otro de
+  sus tickets abiertos (mismo archivo o mismo contenido con otro nombre), el asistente le
+  avisa con el número de ese ticket y no abre uno nuevo salvo que confirme que es otro
+  pedido. En ese caso, el equipo ve la advertencia de posible duplicado en el ticket.
+- **Mis tickets:** resumen arriba con abiertos, en revisión, esperando tu respuesta y
+  resueltos; el menú muestra la cantidad de tickets abiertos.
+
 **Para los equipos internos** (`/equipo`)
 - Bandeja ordenada por prioridad y vencimiento, con filtros por equipo, estado,
   prioridad y contrato.

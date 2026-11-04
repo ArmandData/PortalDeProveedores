@@ -46,7 +46,9 @@
   const human = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
   function md(text) {
-    let html = esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    let html = esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      // Números de ticket como enlace (el patrón es fijo, no admite texto arbitrario)
+      .replace(/\b(PRV-\d{4}-\d{5})\b/g, '<a href="/tickets/$1">$1</a>');
     const out = [];
     let inList = false;
     for (const line of html.split("\n")) {

@@ -108,7 +108,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     provider_seen_at TEXT,
     title TEXT NOT NULL DEFAULT 'Nueva conversación',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    dup_warned TEXT
 );
 
 -- Tipos de caso: definen equipo resolutor, prioridad sugerida y plazos internos (no visibles para el proveedor)
@@ -171,7 +172,9 @@ CREATE TABLE IF NOT EXISTS attachments (
     mime TEXT NOT NULL,
     size INTEGER NOT NULL,
     extracted_text TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    sha256 TEXT,
+    content_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ticket_events (
@@ -189,6 +192,7 @@ CREATE INDEX IF NOT EXISTS idx_tickets_team ON tickets(team_id, status);
 CREATE INDEX IF NOT EXISTS idx_conv_provider ON conversations(provider_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_provider ON contracts(provider_id);
 CREATE INDEX IF NOT EXISTS idx_docs_provider ON provider_documents(provider_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
 """
 
 TEAMS = [
@@ -293,10 +297,18 @@ def init_db(seed=True):
 
 def _migrate(conn):
     """Agrega columnas nuevas a bases creadas con versiones anteriores."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(tickets)")}
-    for col, ddl in (("case_type_id", "INTEGER REFERENCES case_types(id)"), ("response_due", "TEXT")):
-        if col not in cols:
-            conn.execute(f"ALTER TABLE tickets ADD COLUMN {col} {ddl}")
+    new_columns = {
+        "tickets": (("case_type_id", "INTEGER REFERENCES case_types(id)"), ("response_due", "TEXT")),
+        "attachments": (("sha256", "TEXT"), ("content_hash", "TEXT")),
+        "conversations": (("dup_warned", "TEXT"),),
+    }
+    for table, columns in new_columns.items():
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col, ddl in columns:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_sha ON attachments(sha256)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_content ON attachments(content_hash)")
 
 
 def _seed_case_types(conn):

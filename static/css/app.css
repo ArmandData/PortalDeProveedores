@@ -737,3 +737,20 @@ h1 { font-weight: 700; }
   .case-types-table td[data-label] { text-align: left; display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
   .case-types-table td[data-label]::before { content: attr(data-label); color: var(--text-3); }
 }
+
+/* Mis tickets: resumen por estado */
+.ticket-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tsum { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow-sm); color: var(--text); }
+a.tsum:hover { text-decoration: none; border-color: var(--primary); }
+a.tsum[aria-current="true"] { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.tsum-label { font-size: 13px; font-weight: 600; color: var(--text-3); display: inline-flex; gap: 6px; align-items: center; }
+.tsum-value { font-size: 28px; line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tsum-sub { font-size: 12.5px; color: var(--text-3); }
+.tsum-open { border-top: 3px solid var(--brand); }
+.tsum-open .tsum-value { color: var(--primary); }
+.tsum-warn { border-top: 3px solid var(--warning); background: var(--warning-soft); }
+.tsum-warn .tsum-value, .tsum-warn .tsum-label { color: var(--warning); }
+.sidebar .nav .nav-dot { background: #5ec8ff; box-shadow: 0 0 0 2px rgba(94, 200, 255, .3); }
+.nav .nav-dot { margin-left: auto; }
+.nav .nav-dot + .count { margin-left: 6px; }
+@media (max-width: 860px) { .ticket-summary { grid-template-columns: 1fr 1fr; } .tsum-value { font-size: 24px; } }
