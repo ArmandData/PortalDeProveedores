@@ -81,6 +81,16 @@ plan gratuito los tickets y archivos se borran cada vez que el servicio se reini
   cambio de estado, prioridad, equipo (re-derivación) y asignado, estado de la
   documentación del proveedor, ficha del contrato e historial de eventos.
 
+**Analítica** (`/equipo/analitica`, solo administrador y equipos)
+- Reclamos por proveedor y por contrato, tiempo de primera respuesta y de resolución de
+  cada ticket, promedios y medianas, cumplimiento del SLA por equipo, filtros por
+  período, equipo y proveedor, y exportación a CSV.
+
+**Interfaz**
+- Paleta corporativa (azul institucional `#005DA7`, grises neutros y tipografía tipo DIN)
+  con modo claro y oscuro: botón en el menú (o arriba en el celular) que recuerda la
+  elección; si no se elige, sigue la configuración del sistema.
+
 ### Específico de Oil&Gas
 - **10 equipos** con plazos propios, entre ellos *Certificación de Servicios* (partes
   diarios, actas de medición, HES), *Calidad e Inspección QA/QC* (mill certificates,

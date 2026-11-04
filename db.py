@@ -1,5 +1,6 @@
 """Capa de datos: esquema SQLite, conexión y datos de ejemplo."""
 import os
+import random
 import secrets
 import sqlite3
 from datetime import datetime, timedelta
@@ -363,7 +364,7 @@ def _seed(conn):
     agent = {r[0]: r[1] for r in conn.execute("SELECT username, id FROM users WHERE role='agent'")}
 
     def seed_ticket(code, pid, contract_id, team, kind, prio, status, subject, summary, ref, loc, days_ago, msgs):
-        created = now - timedelta(days=days_ago)
+        created = (now - timedelta(days=days_ago)).replace(microsecond=0)
         sla = created + timedelta(hours=dict((t[0], t[3]) for t in TEAMS)[team])
         conv = conn.execute(
             "INSERT INTO conversations (provider_id,contract_id,title,created_at,updated_at,provider_seen_at) VALUES (?,?,?,?,?,?)",
@@ -389,7 +390,78 @@ def _seed(conn):
                      (last.isoformat(sep=" "), (last - timedelta(minutes=1)).isoformat(sep=" ") if msgs[-1][0] == "agent"
                       else last.isoformat(sep=" "), conv))
 
-    seed_ticket("PRV-2026-00001", 1, 1, "certificacion", "reclamo", "alta", "resuelto",
+    # ---- Historial de ~4 meses para la analítica (determinístico) ----
+    rng = random.Random(2026)
+    # (proveedor, contrato, equipo, tipo, prioridad, asunto, resumen, referencia, locación)
+    catalog = [
+        (1, 1, "certificacion", "reclamo", "alta", "Parte diario observado por horas de stand-by",
+         "El company man observó horas de stand-by del equipo de workover en el parte diario.", "Parte diario LNN-{n}", "Bloque Loma Negra Norte, pozo LNN-{n}"),
+        (1, 1, "pagos", "consulta", "media", "Fecha de pago del certificado de {mes}",
+         "Consulta por la fecha de pago del certificado mensual de workover.", "HES 1000{n}", "Bloque Loma Negra Norte"),
+        (1, 2, "certificacion", "reclamo", "media", "Acta de medición pendiente de firma",
+         "El acta de medición del equipo de pulling sigue sin firma de Producción.", "Acta AM-{n}", "Bloque Sierra Azul"),
+        (1, 1, "compras", "consulta", "media", "Ajuste de tarifa por polinómica",
+         "Solicitud de actualización de tarifas según la fórmula polinómica del contrato.", "CT-2025-0311", "Bloque Loma Negra Norte"),
+        (1, 3, "facturacion", "reclamo", "alta", "Factura rechazada por HES incorrecta",
+         "Factura de cementación rechazada por referenciar una HES de otro contrato.", "FC A 0004-000{n}", "Área Añelo Este"),
+        (1, None, "maestro", "consulta", "media", "Renovación de seguro de flota",
+         "Envío de la renovación del seguro de flota y equipos para validación.", "Póliza AUT-{n}", ""),
+        (1, 1, "hse", "reclamo", "urgente", "Casi accidente durante maniobra de pulling",
+         "Reporte de casi accidente por caída de herramienta en boca de pozo, sin lesionados.", "Reporte HSE-{n}", "Bloque Loma Negra Norte, pozo LNN-{n}"),
+        (2, 4, "calidad", "reclamo", "alta", "Lote de casing retenido en inspección",
+         "Lote de casing 9 5/8\" retenido por diferencias en el certificado de la colada.", "OC 45000{n}", "Base Operativa Añelo"),
+        (2, 4, "logistica", "reclamo", "media", "Turno de descarga reprogramado sin aviso",
+         "El camión con tubing esperó 6 horas en la base por un turno reprogramado.", "Remito 0003-000{n}", "Base Operativa Añelo"),
+        (2, 4, "pagos", "consulta", "media", "Estado de pago de factura de tubing",
+         "Consulta por el pago de la factura de tubing con recepción conforme.", "FC A 0003-000{n}", "Base Operativa Añelo"),
+        (2, 4, "facturacion", "reclamo", "media", "Nota de crédito por material devuelto",
+         "Pedido de instrucciones para emitir nota de crédito por tiros devueltos.", "NC 0003-000{n}", ""),
+        (2, None, "impuestos", "consulta", "baja", "Certificado de exclusión de percepciones",
+         "Carga del certificado de exclusión de percepciones de IIBB.", "", ""),
+        (3, 5, "logistica", "reclamo", "alta", "Demoras en el ingreso a locación",
+         "Los camiones cisterna esperan más de 3 horas en el control de acceso a la locación.", "Locación AE-{n}", "Área Añelo Este, locación AE-{n}"),
+        (3, 5, "certificacion", "reclamo", "media", "Viajes no certificados en el mes",
+         "Diferencia entre viajes realizados y viajes certificados de agua para fractura.", "Certificado TR-{n}", "Área Añelo Este"),
+        (3, 5, "pagos", "reclamo", "alta", "Pago vencido de factura de transporte",
+         "Factura de transporte de arena vencida hace más de 30 días.", "FC A 0002-0000{n}", "Área Añelo Este"),
+        (3, 5, "hse", "reclamo", "urgente", "Derrame menor de agua de retorno",
+         "Derrame menor de agua de retorno durante la descarga, contenido en la locación.", "Reporte HSE-{n}", "Área Añelo Este, locación AE-{n}"),
+        (3, None, "maestro", "consulta", "media", "Alta de nuevas unidades en la flota",
+         "Solicitud de habilitación de 4 nuevos equipos tractor-cisterna.", "", ""),
+    ]
+    meses = ["junio", "julio", "agosto", "septiembre", "octubre"]
+    team_sla = {t[0]: t[3] for t in TEAMS}
+    history = []
+    for i in range(46):
+        prov, contract, team, kind, prio, subject, summary, ref, loc = rng.choice(catalog)
+        n = rng.randint(1000, 1999)
+        days_ago = rng.uniform(11, 125)
+        sla_h = team_sla[team]
+        # tiempos realistas: primera respuesta entre 10% y 120% del SLA; algunos casos fuera de plazo
+        first = max(0.3, rng.uniform(0.05, 0.6) * sla_h)
+        # la mayoría se resuelve dentro del SLA; el resto se excede (para que la analítica muestre desvíos)
+        resolve = rng.uniform(first + 0.1, sla_h * 0.95) if rng.random() < 0.86 else sla_h * rng.uniform(1.1, 2.5)
+        status = "cerrado" if days_ago > 40 else rng.choice(["resuelto", "resuelto", "cerrado", "en_curso"])
+        history.append((days_ago, prov, contract, team, kind, prio, status,
+                        subject.format(mes=rng.choice(meses), n=n), summary, ref.format(n=n), loc.format(n=n), first, resolve))
+    history.sort(key=lambda h: -h[0])
+
+    counter = [0]
+
+    def next_code():
+        counter[0] += 1
+        return f"PRV-2026-{counter[0]:05d}"
+
+    for (days_ago, prov, contract, team, kind, prio, status, subject, summary, ref, loc, first, resolve) in history:
+        msgs = [("provider", summary, 0), ("assistant", f"Registré tu {kind} y lo derivé al equipo correspondiente.", 0.02),
+                ("agent", "Hola, ya estamos revisando el caso con el área responsable. Te actualizamos a la brevedad.", first)]
+        if status in ("resuelto", "cerrado"):
+            msgs.append(("agent", "Caso resuelto. Quedamos a disposición por cualquier otra consulta.", resolve))
+        seed_ticket(next_code(), prov, contract, team, kind, prio, status, subject, summary, ref, loc, days_ago, msgs)
+    # el historial ya fue leído por los proveedores (solo los casos recientes muestran "respuesta nueva")
+    conn.execute("UPDATE conversations SET provider_seen_at=updated_at")
+
+    seed_ticket(next_code(), 1, 1, "certificacion", "reclamo", "alta", "resuelto",
                 "Certificado de servicios de octubre rechazado",
                 "El proveedor reclama el rechazo del certificado de octubre del contrato CT-2025-0311 (workover, Loma Negra Norte). "
                 "Motivo informado: partes diarios del pozo LNN-1042 sin firma del company man.",
@@ -400,7 +472,7 @@ def _seed(conn):
                     ("agent", "Hola Martín. El certificado se rechazó porque 3 partes diarios del pozo LNN-1042 no tenían la firma del company man. "
                               "Ya los recibimos firmados y aprobamos la HES 1000452. Podés facturar con esa referencia.", 30),
                 ])
-    seed_ticket("PRV-2026-00002", 2, 4, "calidad", "reclamo", "alta", "esperando_proveedor",
+    seed_ticket(next_code(), 2, 4, "calidad", "reclamo", "alta", "esperando_proveedor",
                 "Tubing 2 7/8\" rechazado en inspección de recepción",
                 "Lote de 180 tiros de tubing 2 7/8\" J55 entregado en Base Operativa Añelo, retenido en inspección: "
                 "falta el mill certificate de la colada 4471 y hay 6 tiros con daño en rosca.",
@@ -410,14 +482,15 @@ def _seed(conn):
                     ("agent", "Hola Lucía. Para liberar el lote necesitamos el mill certificate de la colada 4471. Además, 6 tiros tienen daño en rosca "
                               "y quedan para devolución. ¿Nos enviás el certificado y nos confirmás la reposición?", 20),
                 ])
-    seed_ticket("PRV-2026-00003", 3, 5, "pagos", "consulta", "media", "en_curso",
+    pagos_code = next_code()
+    seed_ticket(pagos_code, 3, 5, "pagos", "consulta", "media", "en_curso",
                 "Estado de pago de la factura A 0002-00004518",
                 "El proveedor consulta la fecha de pago de la factura A 0002-00004518 (transporte de agua, septiembre), "
                 "emitida con HES 1000398.", "FC A 0002-00004518, HES 1000398", "Área Añelo Este", 1, [
                     ("provider", "¿Me pueden decir cuándo se paga la factura A 0002-00004518 de septiembre?", 0),
                     ("assistant", "Registré tu consulta **PRV-2026-00003** y la derivé a **Tesorería y Pagos**.", 0.02),
                 ])
-    conn.execute("UPDATE tickets SET assignee_id=? WHERE code='PRV-2026-00003'", (agent["agente.pagos"],))
+    conn.execute("UPDATE tickets SET assignee_id=? WHERE code=?", (agent["agente.pagos"], pagos_code))
 
 
 CONTRACT_DIR = os.path.join(os.path.dirname(DB_PATH), "contracts")

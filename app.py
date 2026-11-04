@@ -804,6 +804,170 @@ def download(att_id):
 # ---------------------------------------------------------------------------
 # Equipos internos (mesa de ayuda)
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Analítica de desempeño (admin y equipos internos)
+# ---------------------------------------------------------------------------
+PERIODS = {"30": ("Últimos 30 días", 30), "90": ("Últimos 90 días", 90), "180": ("Últimos 180 días", 180), "todo": ("Todo el historial", None)}
+
+
+def fmt_duration(hours):
+    """Duración legible: minutos, horas o días."""
+    if hours is None:
+        return "—"
+    if hours < 1:
+        return f"{max(1, round(hours * 60))} min"
+    if hours < 48:
+        return f"{hours:.1f} h".replace(".", ",")
+    return f"{hours / 24:.1f} d".replace(".", ",")
+
+
+app.jinja_env.filters["duracion"] = fmt_duration
+
+
+def _hours_between(a, b):
+    if not a or not b:
+        return None
+    return max(0.0, (parse_dt(b) - parse_dt(a)).total_seconds() / 3600)
+
+
+def _avg(values):
+    vals = [v for v in values if v is not None]
+    return sum(vals) / len(vals) if vals else None
+
+
+def _median(values):
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return None
+    mid = len(vals) // 2
+    return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
+
+
+def analytics_data(period, team_id, provider_id):
+    sql = """SELECT t.*, tm.name AS team_name, tm.color AS team_color, tm.sla_hours, p.razon_social, p.nombre_fantasia,
+             ct.numero AS contract_numero, ct.objeto AS contract_objeto,
+             (SELECT MIN(m.created_at) FROM messages m WHERE m.conversation_id=t.conversation_id
+                AND m.role='agent' AND m.internal=0) AS first_response_at
+             FROM tickets t JOIN teams tm ON tm.id=t.team_id JOIN providers p ON p.id=t.provider_id
+             LEFT JOIN contracts ct ON ct.id=t.contract_id WHERE 1=1"""
+    args = []
+    days = PERIODS.get(period, PERIODS["90"])[1]
+    if days:
+        sql += " AND t.created_at >= ?"
+        args.append((datetime.now() - timedelta(days=days)).replace(microsecond=0).isoformat(sep=" "))
+    if team_id:
+        sql += " AND t.team_id=?"
+        args.append(team_id)
+    if provider_id:
+        sql += " AND t.provider_id=?"
+        args.append(provider_id)
+    rows = db.query(sql + " ORDER BY t.created_at DESC", args)
+
+    now_s = db.now_iso()
+    tickets = []
+    for r in rows:
+        resolved = r["status"] in ("resuelto", "cerrado") and r["resolved_at"]
+        resp_h = _hours_between(r["created_at"], r["first_response_at"])
+        res_h = _hours_between(r["created_at"], r["resolved_at"]) if resolved else None
+        if resolved:
+            sla = "cumplido" if r["resolved_at"] <= r["sla_due"] else "incumplido"
+        else:
+            sla = "en_plazo" if now_s <= r["sla_due"] else "vencido"
+        tickets.append(dict(code=r["code"], subject=r["subject"], provider=r["nombre_fantasia"] or r["razon_social"],
+                            provider_id=r["provider_id"], contract=r["contract_numero"] or "Sin contrato",
+                            contract_objeto=r["contract_objeto"] or "", team=r["team_name"], team_color=r["team_color"],
+                            kind=r["kind"], priority=r["priority"], status=r["status"], created_at=r["created_at"],
+                            response_h=resp_h, resolution_h=res_h, sla=sla, resolved=bool(resolved)))
+
+    def group(key, label_fn):
+        groups = {}
+        for t in tickets:
+            g = groups.setdefault(key(t), {"label": label_fn(t), "total": 0, "reclamos": 0, "abiertos": 0,
+                                           "resp": [], "res": [], "sla_ok": 0, "sla_eval": 0})
+            g["total"] += 1
+            g["reclamos"] += t["kind"] == "reclamo"
+            g["abiertos"] += not t["resolved"]
+            g["resp"].append(t["response_h"])
+            g["res"].append(t["resolution_h"])
+            if t["resolved"]:
+                g["sla_eval"] += 1
+                g["sla_ok"] += t["sla"] == "cumplido"
+        out = []
+        for g in groups.values():
+            out.append(dict(label=g["label"], total=g["total"], reclamos=g["reclamos"], abiertos=g["abiertos"],
+                            avg_resp=_avg(g["resp"]), avg_res=_avg(g["res"]),
+                            sla_pct=round(100 * g["sla_ok"] / g["sla_eval"]) if g["sla_eval"] else None))
+        return out
+
+    by_provider = sorted(group(lambda t: t["provider_id"], lambda t: t["provider"]), key=lambda g: (-g["reclamos"], -g["total"]))
+    by_contract = sorted(group(lambda t: t["contract"], lambda t: t["contract"] + (f" · {t['contract_objeto'][:48]}" if t["contract_objeto"] else "")),
+                         key=lambda g: (-g["reclamos"], -g["total"]))
+    by_team = sorted(group(lambda t: t["team"], lambda t: t["team"]), key=lambda g: -(g["avg_res"] or 0))
+
+    resolved_t = [t for t in tickets if t["resolved"]]
+    kpis = dict(
+        total=len(tickets), reclamos=sum(t["kind"] == "reclamo" for t in tickets),
+        abiertos=sum(not t["resolved"] for t in tickets),
+        vencidos=sum(t["sla"] == "vencido" for t in tickets),
+        avg_resp=_avg([t["response_h"] for t in tickets]), med_resp=_median([t["response_h"] for t in tickets]),
+        avg_res=_avg([t["resolution_h"] for t in resolved_t]), med_res=_median([t["resolution_h"] for t in resolved_t]),
+        sla_pct=round(100 * sum(t["sla"] == "cumplido" for t in resolved_t) / len(resolved_t)) if resolved_t else None,
+        resueltos=len(resolved_t),
+    )
+    return kpis, by_provider, by_contract, by_team, tickets
+
+
+def _analytics_filters():
+    period = request.args.get("periodo", "90")
+    if period not in PERIODS:
+        period = "90"
+    team = request.args.get("equipo", type=int)
+    provider = request.args.get("proveedor", type=int)
+    return period, team, provider
+
+
+@app.route("/equipo/analitica")
+@login_required("agent", "admin")
+def staff_analytics():
+    period, team, provider = _analytics_filters()
+    kpis, by_provider, by_contract, by_team, tickets = analytics_data(period, team, provider)
+    sort = request.args.get("orden", "reciente")
+    if sort == "resolucion":
+        tickets = sorted(tickets, key=lambda t: -(t["resolution_h"] if t["resolution_h"] is not None else -1))
+    elif sort == "respuesta":
+        tickets = sorted(tickets, key=lambda t: -(t["response_h"] if t["response_h"] is not None else -1))
+    max_reclamos_p = max([g["reclamos"] for g in by_provider] + [1])
+    max_reclamos_c = max([g["reclamos"] for g in by_contract] + [1])
+    max_res_team = max([g["avg_res"] or 0 for g in by_team] + [1])
+    return render_template("analytics.html", kpis=kpis, by_provider=by_provider, by_contract=by_contract, by_team=by_team,
+                           tickets=tickets, periods=PERIODS, period=period, team=team, provider=provider, sort=sort,
+                           teams=db.query("SELECT * FROM teams ORDER BY name"),
+                           providers=db.query("SELECT id, razon_social FROM providers ORDER BY razon_social"),
+                           max_reclamos_p=max_reclamos_p, max_reclamos_c=max_reclamos_c, max_res_team=max_res_team,
+                           SLA_LABELS={"cumplido": "Cumplido", "incumplido": "Fuera de plazo", "en_plazo": "En plazo", "vencido": "Vencido"})
+
+
+@app.route("/equipo/analitica.csv")
+@login_required("agent", "admin")
+def staff_analytics_csv():
+    import csv
+    import io
+    period, team, provider = _analytics_filters()
+    _, _, _, _, tickets = analytics_data(period, team, provider)
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Ticket", "Asunto", "Proveedor", "Contrato", "Equipo", "Tipo", "Prioridad", "Estado", "Creado",
+                "Primera respuesta (h)", "Resolución (h)", "SLA"])
+    for t in tickets:
+        f = lambda v: "" if v is None else f"{v:.2f}".replace(".", ",")
+        w.writerow([t["code"], t["subject"], t["provider"], t["contract"], t["team"], t["kind"], t["priority"], t["status"],
+                    t["created_at"], f(t["response_h"]), f(t["resolution_h"]), t["sla"]])
+    from flask import Response
+    return Response("﻿" + buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=analitica-tickets-{period}.csv"})
+
+
 @app.route("/equipo")
 @login_required("agent", "admin")
 def staff_inbox():
